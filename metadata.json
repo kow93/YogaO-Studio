@@ -1,0 +1,5 @@
+{
+  "name": "Yogao Studio Manager",
+  "description": "A comprehensive management application for a yoga studio owner to handle student memberships, track daily attendance, and calculate weekly, monthly, and yearly revenue.",
+  "requestFramePermissions": []
+}
