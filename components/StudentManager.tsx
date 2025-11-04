@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Student, Membership, PassType } from '../types';
 import { PASS_OPTIONS, PASS_PRICES } from '../constants';
@@ -7,7 +6,7 @@ import { CloseIcon } from './icons';
 interface StudentManagerProps {
     students: Student[];
     memberships: Membership[];
-    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string) => void;
+    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
     deleteStudent: (studentId: string) => void;
     updateStudentAndMembership: (
         studentId: string,
@@ -19,21 +18,25 @@ interface StudentManagerProps {
 const AddStudentModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
-    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string) => void;
+    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
 }> = ({ isOpen, onClose, addStudent }) => {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+    const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
+    const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (name && phone && passType && startDate) {
-            addStudent({ name, phone }, passType, startDate);
+            addStudent({ name, phone }, passType, startDate, paymentMethod, cashReceiptIssued);
             setName('');
             setPhone('');
             setPassType(PassType.MONTHLY_3_PER_WEEK);
             setStartDate(new Date().toISOString().split('T')[0]);
+            setPaymentMethod('카드');
+            setCashReceiptIssued(false);
             onClose();
         }
     };
@@ -42,7 +45,7 @@ const AddStudentModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-            <div className="bg-white rounded-lg p-8 shadow-2xl w-full max-w-md m-4">
+            <div className="bg-white rounded-lg p-8 shadow-2xl w-full max-w-md m-4 max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold text-gray-800">신규 회원 등록</h2>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
@@ -70,6 +73,27 @@ const AddStudentModal: React.FC<{
                         <label htmlFor="startDate" className="block text-sm font-medium text-gray-700">시작일</label>
                         <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
                     </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-700">결제 방식</label>
+                        <div className="mt-2 flex items-center space-x-4">
+                            <label className="flex items-center">
+                                <input type="radio" name="paymentMethod" value="카드" checked={paymentMethod === '카드'} onChange={() => setPaymentMethod('카드')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
+                                <span className="ml-2 text-sm text-gray-700">카드</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input type="radio" name="paymentMethod" value="현금" checked={paymentMethod === '현금'} onChange={() => setPaymentMethod('현금')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
+                                <span className="ml-2 text-sm text-gray-700">현금</span>
+                            </label>
+                        </div>
+                    </div>
+                    {paymentMethod === '현금' && (
+                        <div className="pl-1">
+                            <label className="flex items-center">
+                                <input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+                                <span className="ml-2 text-sm font-medium text-gray-700">현금영수증 발행</span>
+                            </label>
+                        </div>
+                    )}
                     <div className="flex justify-end pt-4">
                         <button type="button" onClick={onClose} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md mr-2 hover:bg-gray-300">취소</button>
                         <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">등록</button>
@@ -97,6 +121,8 @@ const StudentDetailModal: React.FC<{
     const [startDate, setStartDate] = useState(membership.startDate.split('T')[0]);
     const [holdStart, setHoldStart] = useState('');
     const [holdEnd, setHoldEnd] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>(membership.paymentMethod);
+    const [cashReceiptIssued, setCashReceiptIssued] = useState(membership.cashReceiptIssued || false);
 
     if (!student) return null;
 
@@ -110,6 +136,8 @@ const StudentDetailModal: React.FC<{
         const membershipData: Partial<Omit<Membership, 'id' | 'studentId'>> = {};
         if (passType !== membership.passType) membershipData.passType = passType;
         if (startDate !== membership.startDate.split('T')[0]) membershipData.startDate = startDate;
+        if (paymentMethod !== membership.paymentMethod) membershipData.paymentMethod = paymentMethod;
+        if (cashReceiptIssued !== (membership.cashReceiptIssued || false)) membershipData.cashReceiptIssued = cashReceiptIssued;
         
         if (holdStart && holdEnd && new Date(holdEnd) >= new Date(holdStart)) {
             membershipData.holdStartDate = holdStart;
@@ -149,7 +177,7 @@ const StudentDetailModal: React.FC<{
                     </div>
                     
                     <div className="p-4 border rounded-md">
-                        <h3 className="text-lg font-semibold mb-2 text-gray-700">이용권 정보</h3>
+                        <h3 className="text-lg font-semibold mb-2 text-gray-700">이용권 및 결제 정보</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label htmlFor="edit-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
@@ -164,6 +192,27 @@ const StudentDetailModal: React.FC<{
                                 <input type="date" id="edit-startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
                             </div>
                         </div>
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700">결제 방식</label>
+                             <div className="mt-2 flex items-center space-x-4">
+                                <label className="flex items-center">
+                                    <input type="radio" name="paymentMethod-edit" value="카드" checked={paymentMethod === '카드'} onChange={() => setPaymentMethod('카드')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
+                                    <span className="ml-2 text-sm text-gray-700">카드</span>
+                                </label>
+                                <label className="flex items-center">
+                                    <input type="radio" name="paymentMethod-edit" value="현금" checked={paymentMethod === '현금'} onChange={() => setPaymentMethod('현금')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
+                                    <span className="ml-2 text-sm text-gray-700">현금</span>
+                                </label>
+                            </div>
+                        </div>
+                        {paymentMethod === '현금' && (
+                            <div className="mt-4 pl-1">
+                                <label className="flex items-center">
+                                    <input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+                                    <span className="ml-2 text-sm font-medium text-gray-700">현금영수증 발행</span>
+                                </label>
+                            </div>
+                        )}
                     </div>
 
                     <div className="p-4 border rounded-md bg-gray-50">

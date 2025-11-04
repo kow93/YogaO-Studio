@@ -1,20 +1,21 @@
-
 import React, { useState } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { Student, Membership, AttendanceRecord, ViewType, PassType } from './types';
+import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ExpenseCategory } from './types';
 import { PASS_PRICES, PASS_DURATIONS_DAYS } from './constants';
 import { Dashboard } from './components/Dashboard';
 import { StudentManager } from './components/StudentManager';
 import { AttendanceTracker } from './components/AttendanceTracker';
-import { DashboardIcon, StudentsIcon, AttendanceIcon } from './components/icons';
+import { ExpenseManager } from './components/ExpenseManager';
+import { DashboardIcon, StudentsIcon, AttendanceIcon, ExpenseIcon } from './components/icons';
 
 const App: React.FC = () => {
     const [view, setView] = useState<ViewType>('dashboard');
     const [students, setStudents] = useLocalStorage<Student[]>('students', []);
     const [memberships, setMemberships] = useLocalStorage<Membership[]>('memberships', []);
     const [attendance, setAttendance] = useLocalStorage<AttendanceRecord[]>('attendance', []);
+    const [expenses, setExpenses] = useLocalStorage<Expense[]>('expenses', []);
 
-    const addStudent = (studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDateStr: string) => {
+    const addStudent = (studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
         const studentId = Date.now().toString();
         const registrationDate = new Date().toISOString();
         const newStudent: Student = { ...studentData, id: studentId, registrationDate };
@@ -30,6 +31,8 @@ const App: React.FC = () => {
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
             price: PASS_PRICES[passType],
+            paymentMethod,
+            cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : undefined,
         };
 
         setStudents(prev => [...prev, newStudent]);
@@ -80,31 +83,46 @@ const App: React.FC = () => {
                 }
                 
                 newFullMembership.endDate = newEndDate.toISOString();
+                
+                if (newFullMembership.paymentMethod === '카드') {
+                    delete newFullMembership.cashReceiptIssued;
+                }
 
                 return newFullMembership;
             })
         );
     };
 
-    const toggleAttendance = (studentId: string, date: string) => {
-        const recordExists = attendance.some(a => a.studentId === studentId && a.date === date);
+    const toggleAttendance = (studentId: string, date: string, classTime: string) => {
+        const recordExists = attendance.some(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
         if (recordExists) {
-            setAttendance(prev => prev.filter(a => !(a.studentId === studentId && a.date === date)));
+            setAttendance(prev => prev.filter(a => !(a.studentId === studentId && a.date === date && a.classTime === classTime)));
         } else {
-            setAttendance(prev => [...prev, { studentId, date }]);
+            setAttendance(prev => [...prev, { studentId, date, classTime }]);
         }
+    };
+
+    const addExpense = (expenseData: Omit<Expense, 'id'>) => {
+        const newExpense: Expense = { ...expenseData, id: Date.now().toString() };
+        setExpenses(prev => [...prev, newExpense]);
+    };
+
+    const deleteExpense = (expenseId: string) => {
+        setExpenses(prev => prev.filter(e => e.id !== expenseId));
     };
     
     const renderView = () => {
         switch (view) {
             case 'dashboard':
-                return <Dashboard students={students} memberships={memberships} />;
+                return <Dashboard students={students} memberships={memberships} expenses={expenses} />;
             case 'students':
                 return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} />;
             case 'attendance':
                 return <AttendanceTracker students={students} memberships={memberships} attendance={attendance} toggleAttendance={toggleAttendance} />;
+            case 'expenses':
+                return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} />;
             default:
-                return <Dashboard students={students} memberships={memberships} />;
+                return <Dashboard students={students} memberships={memberships} expenses={expenses} />;
         }
     };
 
@@ -119,6 +137,7 @@ const App: React.FC = () => {
                         <NavItem icon={<DashboardIcon className="w-5 h-5"/>} label="대시보드" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
                         <NavItem icon={<StudentsIcon className="w-5 h-5"/>} label="회원 관리" active={view === 'students'} onClick={() => setView('students')} />
                         <NavItem icon={<AttendanceIcon className="w-5 h-5"/>} label="출결 관리" active={view === 'attendance'} onClick={() => setView('attendance')} />
+                        <NavItem icon={<ExpenseIcon className="w-5 h-5"/>} label="가계부" active={view === 'expenses'} onClick={() => setView('expenses')} />
                     </nav>
                 </aside>
                 <main className="flex-1 p-6 md:p-10">

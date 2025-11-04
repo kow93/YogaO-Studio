@@ -1,11 +1,11 @@
-
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Student, Membership } from '../types';
+import { Student, Membership, Expense } from '../types';
 
 interface DashboardProps {
     students: Student[];
     memberships: Membership[];
+    expenses: Expense[];
 }
 
 const StatCard: React.FC<{ title: string; value: string | number; description: string }> = ({ title, value, description }) => (
@@ -25,7 +25,7 @@ const getWeekNumber = (d: Date): number => {
 };
 
 
-export const Dashboard: React.FC<DashboardProps> = ({ students, memberships }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, expenses }) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -64,36 +64,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships }) =
             };
         })
         .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-
-    const processRevenueData = (period: 'week' | 'month' | 'year') => {
-        const data: { [key: string]: number } = {};
-
+    
+    const processComparisonData = (period: 'month' | 'year') => {
+        const revenueMap: { [key: string]: number } = {};
         memberships.forEach(m => {
             const date = new Date(m.startDate);
             let key = '';
-
-            if (period === 'week') {
-                const year = date.getFullYear();
-                const week = getWeekNumber(date);
-                key = `${year}-W${week.toString().padStart(2, '0')}`;
-            } else if (period === 'month') {
+            if (period === 'month') {
                 key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
             } else { // year
                 key = date.getFullYear().toString();
             }
-
-            if (!data[key]) {
-                data[key] = 0;
-            }
-            data[key] += m.price;
+            revenueMap[key] = (revenueMap[key] || 0) + m.price;
         });
 
-        return Object.entries(data).map(([name, revenue]) => ({ name, 매출: revenue })).sort((a,b) => a.name.localeCompare(b.name));
+        const expenseMap: { [key: string]: number } = {};
+        expenses.forEach(e => {
+            const date = new Date(e.date);
+            let key = '';
+            if (period === 'month') {
+                key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+            } else { // year
+                key = date.getFullYear().toString();
+            }
+            expenseMap[key] = (expenseMap[key] || 0) + e.amount;
+        });
+
+        const allKeys = [...new Set([...Object.keys(revenueMap), ...Object.keys(expenseMap)])].sort();
+
+        return allKeys.map(key => ({
+            name: key,
+            매출: revenueMap[key] || 0,
+            지출: expenseMap[key] || 0,
+        }));
     };
 
-    const weeklyRevenue = processRevenueData('week');
-    const monthlyRevenue = processRevenueData('month');
-    const yearlyRevenue = processRevenueData('year');
+    const monthlyComparisonData = processComparisonData('month');
+    const yearlyComparisonData = processComparisonData('year');
+
 
     return (
         <div className="space-y-8">
@@ -131,15 +139,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships }) =
             </div>
 
             <div className="space-y-8">
-                <RevenueChart title="주별 매출" data={weeklyRevenue} />
-                <RevenueChart title="월별 매출" data={monthlyRevenue} />
-                <RevenueChart title="연도별 매출" data={yearlyRevenue} />
+                <ComparisonChart title="월별 매출 및 지출" data={monthlyComparisonData} />
+                <ComparisonChart title="연도별 매출 및 지출" data={yearlyComparisonData} />
             </div>
         </div>
     );
 };
 
-const RevenueChart: React.FC<{ title: string; data: { name: string; 매출: number }[] }> = ({ title, data }) => (
+const ComparisonChart: React.FC<{ title: string; data: { name: string; 매출: number; 지출: number }[] }> = ({ title, data }) => (
     <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
         <h2 className="text-xl font-semibold text-gray-700 mb-4">{title}</h2>
         {data.length > 0 ? (
@@ -151,11 +158,12 @@ const RevenueChart: React.FC<{ title: string; data: { name: string; 매출: numb
                     <Tooltip formatter={(value: number) => new Intl.NumberFormat('ko-KR').format(value) + '원'} />
                     <Legend />
                     <Bar dataKey="매출" fill="#6366f1" />
+                    <Bar dataKey="지출" fill="#f87171" />
                 </BarChart>
             </ResponsiveContainer>
         ) : (
             <div className="flex items-center justify-center h-72 text-gray-500">
-                매출 데이터가 없습니다.
+                매출 또는 지출 데이터가 없습니다.
             </div>
         )}
     </div>

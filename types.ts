@@ -1,4 +1,3 @@
-
 export enum PassType {
     ONE_DAY = '원데이 (1일)',
     ONE_WEEK = '1주일',
@@ -27,11 +26,32 @@ export interface Membership {
   price: number;
   holdStartDate?: string;
   holdEndDate?: string;
+  paymentMethod: '카드' | '현금';
+  cashReceiptIssued?: boolean;
 }
 
 export interface AttendanceRecord {
   studentId: string;
   date: string; // YYYY-MM-DD
+  classTime: string;
 }
 
-export type ViewType = 'dashboard' | 'students' | 'attendance';
+export enum ExpenseCategory {
+    FIXED_COST = '고정비',
+    SUPPLIES = '비품',
+    EVENT = '이벤트',
+    ENTERTAINMENT = '접대비',
+    MAINTENANCE = '유지보수비',
+    OTHER = '기타',
+}
+
+export interface Expense {
+    id: string;
+    date: string; // YYYY-MM-DD
+    category: ExpenseCategory;
+    description: string;
+    amount: number;
+}
+
+
+export type ViewType = 'dashboard' | 'students' | 'attendance' | 'expenses';

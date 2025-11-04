@@ -1,5 +1,4 @@
-
-import { PassType } from './types';
+import { PassType, ExpenseCategory } from './types';
 
 export const PASS_OPTIONS: { label: PassType; value: PassType }[] = [
     { label: PassType.ONE_DAY, value: PassType.ONE_DAY },
@@ -33,3 +32,14 @@ export const PASS_DURATIONS_DAYS: Record<PassType, number> = {
     [PassType.MONTHLY_5_PER_WEEK]: 30,
     [PassType.QUARTERLY_5_PER_WEEK]: 90,
 };
+
+export const CLASS_TIMES = ['10:10 - 11:10', '18:10 - 19:10', '19:40 - 20:40'];
+
+export const EXPENSE_CATEGORIES_OPTIONS: { label: ExpenseCategory, value: ExpenseCategory }[] = [
+    { label: ExpenseCategory.FIXED_COST, value: ExpenseCategory.FIXED_COST },
+    { label: ExpenseCategory.SUPPLIES, value: ExpenseCategory.SUPPLIES },
+    { label: ExpenseCategory.EVENT, value: ExpenseCategory.EVENT },
+    { label: ExpenseCategory.ENTERTAINMENT, value: ExpenseCategory.ENTERTAINMENT },
+    { label: ExpenseCategory.MAINTENANCE, value: ExpenseCategory.MAINTENANCE },
+    { label: ExpenseCategory.OTHER, value: ExpenseCategory.OTHER },
+];
