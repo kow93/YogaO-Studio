@@ -24,6 +24,13 @@ export const ExpenseIcon: React.FC<{ className?: string }> = ({ className }) => 
     </svg>
 );
 
+export const FinancialsIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75V18m-7.5-6.75h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25v-.008zm2.25-4.5h.008v.008H10.5v-.008zm0 2.25h.008v.008H10.5v-.008zm0 2.25h.008v.008H10.5v-.008zm2.25-4.5h.008v.008H12.75v-.008zm0 2.25h.008v.008H12.75v-.008zm0 2.25h.008v.008H12.75v-.008zm2.25-4.5h.008v.008H15v-.008zm0 2.25h.008v.008H15v-.008z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.5v-6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v6m-18 0a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 13.5m-18 0v-6.625c0-.621.504-1.125 1.125-1.125h16.5c.621 0 1.125.504 1.125 1.125V13.5m-18 0h18" />
+    </svg>
+);
+
 
 export const CloseIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">

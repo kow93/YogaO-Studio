@@ -31,9 +31,10 @@ export interface Membership {
 }
 
 export interface AttendanceRecord {
+  id: string;
   studentId: string;
   date: string; // YYYY-MM-DD
-  classTime: string;
+  classTime: string; // "HH:mm - ClassName"
 }
 
 export enum ExpenseCategory {
@@ -53,5 +54,14 @@ export interface Expense {
     amount: number;
 }
 
+export interface ClassSchedule {
+    id: string;
+    dayOfWeek: number; // 1 for Mon, 2 for Tue, ... 6 for Sat
+    startTime: string; // "HH:mm"
+    endTime: string; // "HH:mm"
+    className: string;
+    color: string;
+}
 
-export type ViewType = 'dashboard' | 'students' | 'attendance' | 'expenses';
+
+export type ViewType = 'dashboard' | 'students' | 'schedule' | 'expenses' | 'financials';

@@ -22,6 +22,7 @@ const AddStudentModal: React.FC<{
 }> = ({ isOpen, onClose, addStudent }) => {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
+    const [remarks, setRemarks] = useState('');
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
@@ -30,9 +31,10 @@ const AddStudentModal: React.FC<{
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (name && phone && passType && startDate) {
-            addStudent({ name, phone }, passType, startDate, paymentMethod, cashReceiptIssued);
+            addStudent({ name, phone, remarks }, passType, startDate, paymentMethod, cashReceiptIssued);
             setName('');
             setPhone('');
+            setRemarks('');
             setPassType(PassType.MONTHLY_3_PER_WEEK);
             setStartDate(new Date().toISOString().split('T')[0]);
             setPaymentMethod('카드');
@@ -60,6 +62,10 @@ const AddStudentModal: React.FC<{
                     <div>
                         <label htmlFor="phone" className="block text-sm font-medium text-gray-700">연락처</label>
                         <input type="tel" id="phone" value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="010-1234-5678" required />
+                    </div>
+                    <div>
+                        <label htmlFor="remarks" className="block text-sm font-medium text-gray-700">비고</label>
+                        <textarea id="remarks" value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></textarea>
                     </div>
                     <div>
                         <label htmlFor="passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>

@@ -1,11 +1,14 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Student, Membership, Expense } from '../types';
+import { Student, Membership, Expense, AttendanceRecord, ClassSchedule } from '../types';
+import { AttendanceAnalytics } from './AttendanceAnalytics';
 
 interface DashboardProps {
     students: Student[];
     memberships: Membership[];
     expenses: Expense[];
+    attendance: AttendanceRecord[];
+    schedule: ClassSchedule[];
 }
 
 const StatCard: React.FC<{ title: string; value: string | number; description: string }> = ({ title, value, description }) => (
@@ -16,16 +19,7 @@ const StatCard: React.FC<{ title: string; value: string | number; description: s
     </div>
 );
 
-const getWeekNumber = (d: Date): number => {
-    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-    return weekNo;
-};
-
-
-export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, expenses }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, expenses, attendance, schedule }) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -46,6 +40,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount);
+    };
+    
+    const expiringIn7Days = memberships
+    .filter(m => {
+        const endDate = new Date(m.endDate);
+        endDate.setHours(0, 0, 0, 0);
+        
+        if (endDate < today) return false;
+        if (m.holdStartDate && m.holdEndDate) {
+             const holdStart = new Date(m.holdStartDate);
+             const holdEnd = new Date(m.holdEndDate);
+             if (today >= holdStart && today <= holdEnd) return false;
+        }
+
+        const diffTime = endDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays <= 7;
+    })
+    .map(m => ({
+        ...m,
+        studentName: students.find(s => s.id === m.studentId)?.name || '알 수 없는 회원'
+    }))
+    .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+
+    const handleSendReminder = (studentName: string) => {
+        alert(`${studentName}님에게 재등록 알림 메시지를 보냈습니다. (시뮬레이션)`);
     };
 
     const firstDayOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
@@ -112,6 +132,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
                 <StatCard title="활성 회원 수" value={activeMemberships.length} description="현재 이용권이 유효한 회원입니다." />
                 <StatCard title="홀딩 회원 수" value={holdingMembersCount} description="현재 이용권을 홀딩 중인 회원입니다." />
             </div>
+            
+            <div className="bg-orange-50 p-6 rounded-lg shadow-md border border-orange-200">
+                <h2 className="text-xl font-semibold text-orange-800 mb-4">
+                    만료 임박 회원 (7일 이내) ({expiringIn7Days.length}명)
+                </h2>
+                {expiringIn7Days.length > 0 ? (
+                    <ul className="divide-y divide-orange-200 max-h-72 overflow-y-auto">
+                        {expiringIn7Days.map(m => (
+                            <li key={m.id} className="py-3 flex justify-between items-center">
+                                <div>
+                                    <p className="text-sm font-medium text-gray-900">{m.studentName}</p>
+                                    <p className="text-sm text-gray-500">{m.passType}</p>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <div className="text-sm text-gray-600 text-right">
+                                        <span className="font-medium text-red-600">만료일:</span> {new Date(m.endDate).toLocaleDateString('ko-KR')}
+                                    </div>
+                                    <button 
+                                        onClick={() => handleSendReminder(m.studentName)}
+                                        className="bg-orange-400 text-white px-3 py-1 text-xs font-semibold rounded-md hover:bg-orange-500 whitespace-nowrap"
+                                    >
+                                        알림 보내기
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <div className="flex items-center justify-center h-24 text-gray-500">
+                        7일 이내에 만료되는 회원이 없습니다.
+                    </div>
+                )}
+            </div>
+
+            <AttendanceAnalytics attendance={attendance} schedule={schedule} />
 
             <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-700 mb-4">

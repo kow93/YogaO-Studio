@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ExpenseCategory } from './types';
-import { PASS_PRICES, PASS_DURATIONS_DAYS } from './constants';
+import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule } from './types';
+import { PASS_PRICES, PASS_DURATIONS_DAYS, DEFAULT_SCHEDULE } from './constants';
 import { Dashboard } from './components/Dashboard';
 import { StudentManager } from './components/StudentManager';
-import { AttendanceTracker } from './components/AttendanceTracker';
+import { ScheduleManager } from './components/ScheduleManager';
 import { ExpenseManager } from './components/ExpenseManager';
-import { DashboardIcon, StudentsIcon, AttendanceIcon, ExpenseIcon } from './components/icons';
+import { FinancialReport } from './components/FinancialReport';
+import { DashboardIcon, StudentsIcon, AttendanceIcon, ExpenseIcon, FinancialsIcon } from './components/icons';
 
 const App: React.FC = () => {
     const [view, setView] = useState<ViewType>('dashboard');
@@ -14,25 +15,26 @@ const App: React.FC = () => {
     const [memberships, setMemberships] = useLocalStorage<Membership[]>('memberships', []);
     const [attendance, setAttendance] = useLocalStorage<AttendanceRecord[]>('attendance', []);
     const [expenses, setExpenses] = useLocalStorage<Expense[]>('expenses', []);
+    const [schedule, setSchedule] = useLocalStorage<ClassSchedule[]>('schedule', DEFAULT_SCHEDULE);
 
     const addStudent = (studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
         const studentId = Date.now().toString();
         const registrationDate = new Date().toISOString();
         const newStudent: Student = { ...studentData, id: studentId, registrationDate };
-
+        
         const startDate = new Date(startDateStr);
         const endDate = new Date(startDate);
         endDate.setDate(startDate.getDate() + PASS_DURATIONS_DAYS[passType] - 1);
 
         const newMembership: Membership = {
-            id: `m-${studentId}`,
+            id: `mem-${studentId}`,
             studentId,
             passType,
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
             price: PASS_PRICES[passType],
             paymentMethod,
-            cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : undefined,
+            cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
         };
 
         setStudents(prev => [...prev, newStudent]);
@@ -50,94 +52,103 @@ const App: React.FC = () => {
         updatedStudentData: Partial<Omit<Student, 'id'>>,
         updatedMembershipData: Partial<Omit<Membership, 'id' | 'studentId'>>
     ) => {
-        setStudents(prev =>
-            prev.map(s => (s.id === studentId ? { ...s, ...updatedStudentData } : s))
-        );
-        setMemberships(prev =>
-            prev.map(m => {
-                if (m.studentId !== studentId) return m;
+        setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updatedStudentData } : s));
+        setMemberships(prev => prev.map(m => {
+            if (m.studentId !== studentId) return m;
 
-                const originalMembership = { ...m };
-                const newFullMembership = { ...originalMembership, ...updatedMembershipData };
+            const originalMembership = m;
+            let newEndDate = new Date(originalMembership.endDate);
+            const newFullMembershipData = { ...originalMembership, ...updatedMembershipData };
 
-                let newEndDate = new Date(originalMembership.endDate);
+            if (updatedMembershipData.passType || updatedMembershipData.startDate) {
+                const newStartDate = new Date(newFullMembershipData.startDate);
+                const duration = PASS_DURATIONS_DAYS[newFullMembershipData.passType];
+                newEndDate = new Date(newStartDate);
+                newEndDate.setDate(newStartDate.getDate() + duration - 1);
+                newFullMembershipData.price = PASS_PRICES[newFullMembershipData.passType];
+            }
 
-                // Recalculate end date if pass or start date changes
-                if (updatedMembershipData.passType || updatedMembershipData.startDate) {
-                    const newStartDate = new Date(newFullMembership.startDate);
-                    const duration = PASS_DURATIONS_DAYS[newFullMembership.passType];
-                    newEndDate = new Date(newStartDate);
-                    newEndDate.setDate(newStartDate.getDate() + duration - 1);
-                    newFullMembership.price = PASS_PRICES[newFullMembership.passType];
+            if (updatedMembershipData.holdStartDate && updatedMembershipData.holdEndDate) {
+                const holdStart = new Date(updatedMembershipData.holdStartDate);
+                const holdEnd = new Date(updatedMembershipData.holdEndDate);
+                if (holdEnd >= holdStart) {
+                    const holdDuration = Math.ceil((holdEnd.getTime() - holdStart.getTime()) / (1000 * 3600 * 24)) + 1;
+                    newEndDate.setDate(newEndDate.getDate() + holdDuration);
                 }
+            }
+            
+            newFullMembershipData.endDate = newEndDate.toISOString();
+            if (newFullMembershipData.paymentMethod === '카드') {
+                newFullMembershipData.cashReceiptIssued = false;
+            }
+            
+            const finalMembershipData = { ...m, ...updatedMembershipData, endDate: newFullMembershipData.endDate, price: newFullMembershipData.price };
 
-                // Add hold duration to the (potentially new) end date
-                if (updatedMembershipData.holdStartDate && updatedMembershipData.holdEndDate) {
-                    const holdStart = new Date(updatedMembershipData.holdStartDate);
-                    const holdEnd = new Date(updatedMembershipData.holdEndDate);
-                    
-                    if (holdEnd >= holdStart) {
-                        const holdDuration = Math.ceil((holdEnd.getTime() - holdStart.getTime()) / (1000 * 3600 * 24)) + 1;
-                        newEndDate.setDate(newEndDate.getDate() + holdDuration);
-                    }
-                }
-                
-                newFullMembership.endDate = newEndDate.toISOString();
-                
-                if (newFullMembership.paymentMethod === '카드') {
-                    delete newFullMembership.cashReceiptIssued;
-                }
-
-                return newFullMembership;
-            })
-        );
+            return finalMembershipData;
+        }));
     };
 
     const toggleAttendance = (studentId: string, date: string, classTime: string) => {
-        const recordExists = attendance.some(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
-        if (recordExists) {
-            setAttendance(prev => prev.filter(a => !(a.studentId === studentId && a.date === date && a.classTime === classTime)));
+        const existingRecord = attendance.find(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
+        if (existingRecord) {
+            setAttendance(prev => prev.filter(a => a.id !== existingRecord.id));
         } else {
-            setAttendance(prev => [...prev, { studentId, date, classTime }]);
+            setAttendance(prev => [...prev, { id: Date.now().toString(), studentId, date, classTime }]);
         }
     };
 
     const addExpense = (expenseData: Omit<Expense, 'id'>) => {
-        const newExpense: Expense = { ...expenseData, id: Date.now().toString() };
-        setExpenses(prev => [...prev, newExpense]);
+        setExpenses(prev => [...prev, { ...expenseData, id: Date.now().toString() }]);
     };
 
     const deleteExpense = (expenseId: string) => {
         setExpenses(prev => prev.filter(e => e.id !== expenseId));
     };
-    
+
+    const addOrUpdateSchedule = (classData: ClassSchedule) => {
+        setSchedule(prev => {
+            const existing = prev.find(c => c.id === classData.id);
+            if (existing) {
+                return prev.map(c => c.id === classData.id ? classData : c);
+            }
+            return [...prev, classData];
+        });
+    };
+
+    const deleteSchedule = (classId: string) => {
+        setSchedule(prev => prev.filter(c => c.id !== classId));
+    };
+
     const renderView = () => {
         switch (view) {
             case 'dashboard':
-                return <Dashboard students={students} memberships={memberships} expenses={expenses} />;
+                return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} schedule={schedule} />;
             case 'students':
                 return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} />;
-            case 'attendance':
-                return <AttendanceTracker students={students} memberships={memberships} attendance={attendance} toggleAttendance={toggleAttendance} />;
+            case 'schedule':
+                return <ScheduleManager students={students} memberships={memberships} attendance={attendance} toggleAttendance={toggleAttendance} schedule={schedule} addOrUpdateSchedule={addOrUpdateSchedule} deleteSchedule={deleteSchedule} />;
             case 'expenses':
                 return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} />;
+            case 'financials':
+                return <FinancialReport memberships={memberships} expenses={expenses} students={students} />;
             default:
-                return <Dashboard students={students} memberships={memberships} expenses={expenses} />;
+                return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} schedule={schedule} />;
         }
     };
 
     return (
         <div className="bg-gray-100 min-h-screen">
             <div className="md:flex">
-                <aside className="w-full md:w-64 bg-gray-800 text-white">
+                <aside className="w-full md:w-64 bg-gray-800 text-white flex flex-col">
                     <div className="p-6 text-2xl font-bold border-b border-gray-700">
                         🧘‍♀️ Yogao Studio
                     </div>
-                    <nav>
+                    <nav className="flex-1">
                         <NavItem icon={<DashboardIcon className="w-5 h-5"/>} label="대시보드" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
                         <NavItem icon={<StudentsIcon className="w-5 h-5"/>} label="회원 관리" active={view === 'students'} onClick={() => setView('students')} />
-                        <NavItem icon={<AttendanceIcon className="w-5 h-5"/>} label="출결 관리" active={view === 'attendance'} onClick={() => setView('attendance')} />
+                        <NavItem icon={<AttendanceIcon className="w-5 h-5"/>} label="시간표 & 출결" active={view === 'schedule'} onClick={() => setView('schedule')} />
                         <NavItem icon={<ExpenseIcon className="w-5 h-5"/>} label="가계부" active={view === 'expenses'} onClick={() => setView('expenses')} />
+                        <NavItem icon={<FinancialsIcon className="w-5 h-5"/>} label="재무 리포트" active={view === 'financials'} onClick={() => setView('financials')} />
                     </nav>
                 </aside>
                 <main className="flex-1 p-6 md:p-10">
