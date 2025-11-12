@@ -37,7 +37,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     };
     
     const handleEmptySlotClick = (dayIndex: number, hour: number) => {
-         const newId = `cls-${Date.now()}`;
+         const newId = `cls-${crypto.randomUUID()}`;
          const startTime = `${hour.toString().padStart(2, '0')}:00`;
          const endTime = `${(hour + 1).toString().padStart(2, '0')}:00`;
          const newClass: ClassSchedule = {
@@ -79,6 +79,14 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
 
         const colorClasses = CLASS_COLORS[classItem.color]?.classes || CLASS_COLORS['blue'].classes;
 
+        const classDate = new Date(startOfWeek);
+        classDate.setDate(startOfWeek.getDate() + dayIndex);
+        const dateString = classDate.toISOString().split('T')[0];
+        const classTimeString = `${classItem.startTime} - ${classItem.className}`;
+        const attendanceCount = props.attendance.filter(a =>
+            a.date === dateString && a.classTime === classTimeString
+        ).length;
+
         return (
             <div
                 key={classItem.id}
@@ -88,6 +96,11 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
             >
                 <p className="font-bold">{classItem.className}</p>
                 <p>{classItem.startTime} - {classItem.endTime}</p>
+                {attendanceCount > 0 && (
+                    <div className="absolute top-1 right-1 text-xs font-semibold bg-white/70 text-gray-800 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+                        {attendanceCount}명 출석
+                    </div>
+                )}
                  <button onClick={(e) => handleEditClick(e, classItem)} className="absolute bottom-1 right-1 text-xs hover:underline">편집</button>
             </div>
         );

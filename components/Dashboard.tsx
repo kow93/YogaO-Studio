@@ -37,6 +37,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
     }).length;
 
     const totalRevenue = memberships.reduce((acc, m) => acc + m.price, 0);
+    
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+    const membershipsThisMonth = memberships.filter(m => {
+        const startDate = new Date(m.startDate);
+        return startDate >= firstDayOfMonth && startDate <= lastDayOfMonth;
+    });
+
+    const studentIdsWhoPaidThisMonth = [...new Set(membershipsThisMonth.map(m => m.studentId))];
+
+    const newMembersThisMonthCount = studentIdsWhoPaidThisMonth.filter(studentId => {
+        const student = students.find(s => s.id === studentId);
+        if (student) {
+            const regDate = new Date(student.registrationDate);
+            return regDate >= firstDayOfMonth && regDate <= lastDayOfMonth;
+        }
+        return false;
+    }).length;
+
+    const reregisteredMembersThisMonthCount = studentIdsWhoPaidThisMonth.filter(studentId => {
+        const student = students.find(s => s.id === studentId);
+        if (student) {
+            const regDate = new Date(student.registrationDate);
+            return regDate < firstDayOfMonth;
+        }
+        return false;
+    }).length;
+
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount);
@@ -126,11 +155,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
     return (
         <div className="space-y-8">
             <h1 className="text-3xl font-bold text-gray-800">대시보드</h1>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="총 매출" value={formatCurrency(totalRevenue)} description="누적된 전체 매출입니다." />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <StatCard title="총 회원 수" value={students.length} description="지금까지 등록한 총 회원 수입니다." />
                 <StatCard title="활성 회원 수" value={activeMemberships.length} description="현재 이용권이 유효한 회원입니다." />
                 <StatCard title="홀딩 회원 수" value={holdingMembersCount} description="현재 이용권을 홀딩 중인 회원입니다." />
+                <StatCard title="이번 달 신규 회원" value={`${newMembersThisMonthCount}명`} description="이번 달에 처음 등록한 회원입니다." />
+                <StatCard title="이번 달 재등록" value={`${reregisteredMembersThisMonthCount}명`} description="이번 달에 이용권을 갱신한 회원입니다." />
+                <StatCard title="총 매출" value={formatCurrency(totalRevenue)} description="누적된 전체 매출입니다." />
+
             </div>
             
             <div className="bg-orange-50 p-6 rounded-lg shadow-md border border-orange-200">

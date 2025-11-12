@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule } from './types';
 import { PASS_PRICES, PASS_DURATIONS_DAYS, DEFAULT_SCHEDULE } from './constants';
@@ -17,8 +17,8 @@ const App: React.FC = () => {
     const [expenses, setExpenses] = useLocalStorage<Expense[]>('expenses', []);
     const [schedule, setSchedule] = useLocalStorage<ClassSchedule[]>('schedule', DEFAULT_SCHEDULE);
 
-    const addStudent = (studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
-        const studentId = Date.now().toString();
+    const addStudent = useCallback((studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
+        const studentId = crypto.randomUUID();
         const registrationDate = new Date().toISOString();
         const newStudent: Student = { ...studentData, id: studentId, registrationDate };
         
@@ -27,7 +27,7 @@ const App: React.FC = () => {
         endDate.setDate(startDate.getDate() + PASS_DURATIONS_DAYS[passType] - 1);
 
         const newMembership: Membership = {
-            id: `mem-${studentId}`,
+            id: crypto.randomUUID(),
             studentId,
             passType,
             startDate: startDate.toISOString(),
@@ -39,15 +39,15 @@ const App: React.FC = () => {
 
         setStudents(prev => [...prev, newStudent]);
         setMemberships(prev => [...prev, newMembership]);
-    };
+    }, []);
 
-    const deleteStudent = (studentId: string) => {
-        setStudents(prev => prev.filter(s => s.id !== studentId));
-        setMemberships(prev => prev.filter(m => m.studentId !== studentId));
-        setAttendance(prev => prev.filter(a => a.studentId !== studentId));
-    };
+    const deleteStudent = useCallback((studentIdToDelete: string) => {
+        setStudents(prevStudents => prevStudents.filter(student => student.id !== studentIdToDelete));
+        setMemberships(prevMemberships => prevMemberships.filter(membership => membership.studentId !== studentIdToDelete));
+        setAttendance(prevAttendance => prevAttendance.filter(record => record.studentId !== studentIdToDelete));
+    }, []);
     
-    const updateStudentAndMembership = (
+    const updateStudentAndMembership = useCallback((
         studentId: string,
         updatedStudentData: Partial<Omit<Student, 'id'>>,
         updatedMembershipData: Partial<Omit<Membership, 'id' | 'studentId'>>
@@ -86,6 +86,116 @@ const App: React.FC = () => {
 
             return finalMembershipData;
         }));
+    }, []);
+
+    const bulkExtendMemberships = useCallback((days: number, reason: string) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+    
+        const studentIdsToUpdate = new Set(
+            memberships
+                .filter(m => {
+                    const endDate = new Date(m.endDate);
+                    endDate.setHours(0, 0, 0, 0);
+                    const isHolding = m.holdStartDate && m.holdEndDate && today >= new Date(m.holdStartDate) && today <= new Date(m.holdEndDate);
+                    return endDate >= today && !isHolding;
+                })
+                .map(m => m.studentId)
+        );
+    
+        if (studentIdsToUpdate.size === 0) {
+            alert(`연장할 활성 회원이 없습니다.`);
+            return;
+        }
+        
+        setMemberships(prevMemberships =>
+            prevMemberships.map(m => {
+                if (studentIdsToUpdate.has(m.studentId)) {
+                    const newEndDate = new Date(m.endDate);
+                    newEndDate.setDate(newEndDate.getDate() + days);
+                    return { ...m, endDate: newEndDate.toISOString() };
+                }
+                return m;
+            })
+        );
+    
+        setStudents(prevStudents =>
+            prevStudents.map(s => {
+                if (studentIdsToUpdate.has(s.id)) {
+                    const extensionRemark = `[${new Date().toLocaleDateString('ko-KR')}] "${reason}" 사유로 ${days}일 연장.`;
+                    const newRemarks = s.remarks ? `${s.remarks}\n${extensionRemark}` : extensionRemark;
+                    return { ...s, remarks: newRemarks };
+                }
+                return s;
+            })
+        );
+        
+        alert(`${studentIdsToUpdate.size}명의 활성 회원 이용권이 ${days}일 연장되었습니다.`);
+    }, [memberships]);
+
+    const importStudentsAndMemberships = (data: any[]) => {
+        let addedCount = 0;
+        let updatedCount = 0;
+
+        const newStudents = [...students];
+        const newMemberships = [...memberships];
+
+        data.forEach(item => {
+            const studentId = item.student_id;
+            if (!studentId || !item.student_name) {
+                console.warn('Skipping invalid row during import (missing student_id or student_name):', item);
+                return;
+            }
+
+            const studentData: Student = {
+                id: studentId,
+                name: item.student_name,
+                phone: item.student_phone || '',
+                registrationDate: item.student_registrationDate || new Date().toISOString(),
+                remarks: item.student_remarks || '',
+            };
+
+            const membershipData: Membership | null = item.membership_passType ? {
+                id: item.membership_id || crypto.randomUUID(),
+                studentId: studentId,
+                passType: item.membership_passType as PassType,
+                startDate: item.membership_startDate || new Date().toISOString(),
+                endDate: item.membership_endDate || new Date().toISOString(),
+                price: Number(item.membership_price) || 0,
+                paymentMethod: (item.membership_paymentMethod === '카드' || item.membership_paymentMethod === '현금') ? item.membership_paymentMethod : '카드',
+                cashReceiptIssued: item.membership_cashReceiptIssued === 'true' || item.membership_cashReceiptIssued === true,
+                holdStartDate: item.membership_holdStartDate || undefined,
+                holdEndDate: item.membership_holdEndDate || undefined,
+            } : null;
+
+            const studentIndex = newStudents.findIndex(s => s.id === studentId);
+            
+            if (studentIndex > -1) {
+                // Update
+                newStudents[studentIndex] = studentData;
+                if (membershipData) {
+                    const membershipIndex = newMemberships.findIndex(m => m.studentId === studentId);
+                    if (membershipIndex > -1) {
+                        membershipData.id = item.membership_id || newMemberships[membershipIndex].id;
+                        newMemberships[membershipIndex] = { ...newMemberships[membershipIndex], ...membershipData };
+                    } else {
+                        newMemberships.push(membershipData);
+                    }
+                }
+                updatedCount++;
+            } else {
+                // Add
+                newStudents.push(studentData);
+                if (membershipData) {
+                    newMemberships.push(membershipData);
+                }
+                addedCount++;
+            }
+        });
+
+        setStudents(newStudents);
+        setMemberships(newMemberships);
+        alert(`${addedCount}명의 신규 회원을 등록하고 ${updatedCount}명의 회원 정보를 업데이트했습니다.`);
     };
 
     const toggleAttendance = (studentId: string, date: string, classTime: string) => {
@@ -93,12 +203,12 @@ const App: React.FC = () => {
         if (existingRecord) {
             setAttendance(prev => prev.filter(a => a.id !== existingRecord.id));
         } else {
-            setAttendance(prev => [...prev, { id: Date.now().toString(), studentId, date, classTime }]);
+            setAttendance(prev => [...prev, { id: crypto.randomUUID(), studentId, date, classTime }]);
         }
     };
 
     const addExpense = (expenseData: Omit<Expense, 'id'>) => {
-        setExpenses(prev => [...prev, { ...expenseData, id: Date.now().toString() }]);
+        setExpenses(prev => [...prev, { ...expenseData, id: crypto.randomUUID() }]);
     };
 
     const deleteExpense = (expenseId: string) => {
@@ -124,7 +234,7 @@ const App: React.FC = () => {
             case 'dashboard':
                 return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} schedule={schedule} />;
             case 'students':
-                return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} />;
+                return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} bulkExtendMemberships={bulkExtendMemberships} importStudentsAndMemberships={importStudentsAndMemberships} />;
             case 'schedule':
                 return <ScheduleManager students={students} memberships={memberships} attendance={attendance} toggleAttendance={toggleAttendance} schedule={schedule} addOrUpdateSchedule={addOrUpdateSchedule} deleteSchedule={deleteSchedule} />;
             case 'expenses':
