@@ -11,13 +11,16 @@ import { DashboardIcon, StudentsIcon, AttendanceIcon, ExpenseIcon, FinancialsIco
 
 const App: React.FC = () => {
     const [view, setView] = useState<ViewType>('dashboard');
-    const [students, setStudents] = useLocalStorage<Student[]>('students', []);
-    const [memberships, setMemberships] = useLocalStorage<Membership[]>('memberships', []);
-    const [attendance, setAttendance] = useLocalStorage<AttendanceRecord[]>('attendance', []);
+    // 회원 관련 데이터는 테스트를 위해 앱 재시작 시 초기화되도록 useState를 사용합니다.
+    const [students, setStudents] = useState<Student[]>([]);
+    const [memberships, setMemberships] = useState<Membership[]>([]);
+    const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+    
+    // 스튜디오 운영 데이터는 유지되도록 useLocalStorage를 사용합니다.
     const [expenses, setExpenses] = useLocalStorage<Expense[]>('expenses', []);
     const [schedule, setSchedule] = useLocalStorage<ClassSchedule[]>('schedule', DEFAULT_SCHEDULE);
 
-    const addStudent = useCallback((studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
+    const addStudent = useCallback((studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDateStr: string, paymentDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
         const studentId = crypto.randomUUID();
         const registrationDate = new Date().toISOString();
         const newStudent: Student = { ...studentData, id: studentId, registrationDate };
@@ -33,11 +36,32 @@ const App: React.FC = () => {
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
             price: PASS_PRICES[passType],
+            paymentDate: new Date(paymentDateStr).toISOString(),
             paymentMethod,
             cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
         };
 
         setStudents(prev => [...prev, newStudent]);
+        setMemberships(prev => [...prev, newMembership]);
+    }, []);
+
+    const addMembership = useCallback((studentId: string, passType: PassType, startDateStr: string, paymentDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
+        const startDate = new Date(startDateStr);
+        const endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + PASS_DURATIONS_DAYS[passType] - 1);
+
+        const newMembership: Membership = {
+            id: crypto.randomUUID(),
+            studentId,
+            passType,
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            price: PASS_PRICES[passType],
+            paymentDate: new Date(paymentDateStr).toISOString(),
+            paymentMethod,
+            cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
+        };
+
         setMemberships(prev => [...prev, newMembership]);
     }, []);
 
@@ -49,42 +73,55 @@ const App: React.FC = () => {
     
     const updateStudentAndMembership = useCallback((
         studentId: string,
+        membershipId: string,
         updatedStudentData: Partial<Omit<Student, 'id'>>,
         updatedMembershipData: Partial<Omit<Membership, 'id' | 'studentId'>>
     ) => {
         setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updatedStudentData } : s));
+        
         setMemberships(prev => prev.map(m => {
-            if (m.studentId !== studentId) return m;
+            if (m.id !== membershipId) return m;
 
-            const originalMembership = m;
-            let newEndDate = new Date(originalMembership.endDate);
-            const newFullMembershipData = { ...originalMembership, ...updatedMembershipData };
+            // Merge original data with new updates to get the full picture
+            const newFullMembershipData = { ...m, ...updatedMembershipData };
 
-            if (updatedMembershipData.passType || updatedMembershipData.startDate) {
-                const newStartDate = new Date(newFullMembershipData.startDate);
-                const duration = PASS_DURATIONS_DAYS[newFullMembershipData.passType];
-                newEndDate = new Date(newStartDate);
-                newEndDate.setDate(newStartDate.getDate() + duration - 1);
-                newFullMembershipData.price = PASS_PRICES[newFullMembershipData.passType];
-            }
+            // Determine the correct start date and pass type for calculation
+            const startDate = new Date(newFullMembershipData.startDate);
+            const passType = newFullMembershipData.passType;
+            const duration = PASS_DURATIONS_DAYS[passType];
 
-            if (updatedMembershipData.holdStartDate && updatedMembershipData.holdEndDate) {
-                const holdStart = new Date(updatedMembershipData.holdStartDate);
-                const holdEnd = new Date(updatedMembershipData.holdEndDate);
+            // Calculate the base end date from the start date and pass duration, ignoring any previous holds.
+            const baseEndDate = new Date(startDate);
+            baseEndDate.setDate(startDate.getDate() + duration - 1);
+
+            // Apply the new hold duration to the fresh base end date.
+            let finalEndDate = baseEndDate;
+            if (newFullMembershipData.holdStartDate && newFullMembershipData.holdEndDate) {
+                const holdStart = new Date(newFullMembershipData.holdStartDate);
+                const holdEnd = new Date(newFullMembershipData.holdEndDate);
                 if (holdEnd >= holdStart) {
+                    // +1 because hold period is inclusive (e.g., holding from Mon to Tue is 2 days)
                     const holdDuration = Math.ceil((holdEnd.getTime() - holdStart.getTime()) / (1000 * 3600 * 24)) + 1;
-                    newEndDate.setDate(newEndDate.getDate() + holdDuration);
+                    // Create a new date object from baseEndDate to avoid mutation issues
+                    finalEndDate = new Date(baseEndDate.getTime());
+                    finalEndDate.setDate(baseEndDate.getDate() + holdDuration);
                 }
             }
+
+            // Set the correctly calculated end date
+            newFullMembershipData.endDate = finalEndDate.toISOString();
             
-            newFullMembershipData.endDate = newEndDate.toISOString();
+            // If passType was changed, the price needs to be updated too.
+            if (updatedMembershipData.passType) {
+                 newFullMembershipData.price = PASS_PRICES[passType];
+            }
+
+            // If payment method is card, cash receipt is always false.
             if (newFullMembershipData.paymentMethod === '카드') {
                 newFullMembershipData.cashReceiptIssued = false;
             }
-            
-            const finalMembershipData = { ...m, ...updatedMembershipData, endDate: newFullMembershipData.endDate, price: newFullMembershipData.price };
 
-            return finalMembershipData;
+            return newFullMembershipData;
         }));
     }, []);
 
@@ -162,6 +199,7 @@ const App: React.FC = () => {
                 startDate: item.membership_startDate || new Date().toISOString(),
                 endDate: item.membership_endDate || new Date().toISOString(),
                 price: Number(item.membership_price) || 0,
+                paymentDate: item.membership_paymentDate || item.membership_startDate || new Date().toISOString(),
                 paymentMethod: (item.membership_paymentMethod === '카드' || item.membership_paymentMethod === '현금') ? item.membership_paymentMethod : '카드',
                 cashReceiptIssued: item.membership_cashReceiptIssued === 'true' || item.membership_cashReceiptIssued === true,
                 holdStartDate: item.membership_holdStartDate || undefined,
@@ -234,7 +272,7 @@ const App: React.FC = () => {
             case 'dashboard':
                 return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} schedule={schedule} />;
             case 'students':
-                return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} bulkExtendMemberships={bulkExtendMemberships} importStudentsAndMemberships={importStudentsAndMemberships} />;
+                return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} bulkExtendMemberships={bulkExtendMemberships} importStudentsAndMemberships={importStudentsAndMemberships} addMembership={addMembership} />;
             case 'schedule':
                 return <ScheduleManager students={students} memberships={memberships} attendance={attendance} toggleAttendance={toggleAttendance} schedule={schedule} addOrUpdateSchedule={addOrUpdateSchedule} deleteSchedule={deleteSchedule} />;
             case 'expenses':

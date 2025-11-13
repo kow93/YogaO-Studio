@@ -42,8 +42,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
     const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
     const membershipsThisMonth = memberships.filter(m => {
-        const startDate = new Date(m.startDate);
-        return startDate >= firstDayOfMonth && startDate <= lastDayOfMonth;
+        const paymentDate = new Date(m.paymentDate || m.startDate);
+        return paymentDate >= firstDayOfMonth && paymentDate <= lastDayOfMonth;
     });
 
     const studentIdsWhoPaidThisMonth = [...new Set(membershipsThisMonth.map(m => m.studentId))];
@@ -117,7 +117,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
     const processComparisonData = (period: 'month' | 'year') => {
         const revenueMap: { [key: string]: number } = {};
         memberships.forEach(m => {
-            const date = new Date(m.startDate);
+            const date = new Date(m.paymentDate || m.startDate);
             let key = '';
             if (period === 'month') {
                 key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;

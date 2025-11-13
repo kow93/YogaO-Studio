@@ -6,10 +6,12 @@ import { CloseIcon, UploadIcon, DownloadIcon } from './icons';
 interface StudentManagerProps {
     students: Student[];
     memberships: Membership[];
-    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    addMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
     deleteStudent: (studentId: string) => void;
     updateStudentAndMembership: (
         studentId: string,
+        membershipId: string,
         updatedStudentData: Partial<Omit<Student, 'id'>>,
         updatedMembershipData: Partial<Omit<Membership, 'id' | 'studentId'>>
     ) => void;
@@ -20,25 +22,27 @@ interface StudentManagerProps {
 const AddStudentModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
-    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
 }> = ({ isOpen, onClose, addStudent }) => {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [remarks, setRemarks] = useState('');
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (name && phone && passType && startDate) {
-            addStudent({ name, phone, remarks }, passType, startDate, paymentMethod, cashReceiptIssued);
+        if (name && phone && passType && startDate && paymentDate) {
+            addStudent({ name, phone, remarks }, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued);
             setName('');
             setPhone('');
             setRemarks('');
             setPassType(PassType.MONTHLY_3_PER_WEEK);
             setStartDate(new Date().toISOString().split('T')[0]);
+            setPaymentDate(new Date().toISOString().split('T')[0]);
             setPaymentMethod('카드');
             setCashReceiptIssued(false);
             onClose();
@@ -77,9 +81,15 @@ const AddStudentModal: React.FC<{
                             ))}
                         </select>
                     </div>
-                    <div>
-                        <label htmlFor="startDate" className="block text-sm font-medium text-gray-700">시작일</label>
-                        <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label htmlFor="paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
+                            <input type="date" id="paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
+                        </div>
+                        <div>
+                            <label htmlFor="startDate" className="block text-sm font-medium text-gray-700">이용권 시작일</label>
+                            <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
+                        </div>
                     </div>
                      <div>
                         <label className="block text-sm font-medium text-gray-700">결제 방식</label>
@@ -112,25 +122,97 @@ const AddStudentModal: React.FC<{
     );
 };
 
+const ReregisterForm: React.FC<{
+    student: Student;
+    latestMembership?: Membership;
+    onAddMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    onCancel: () => void;
+}> = ({ student, latestMembership, onAddMembership, onCancel }) => {
+
+    const getDefaultStartDate = () => {
+        if (latestMembership) {
+            const nextDay = new Date(latestMembership.endDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            return nextDay.toISOString().split('T')[0];
+        }
+        return new Date().toISOString().split('T')[0];
+    };
+
+    const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
+    const [startDate, setStartDate] = useState(getDefaultStartDate());
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+    const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
+    const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onAddMembership(student.id, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4 bg-indigo-50 p-6 rounded-lg border border-indigo-200 mt-6">
+            <h3 className="text-xl font-bold text-indigo-800">신규 이용권 등록 (재등록)</h3>
+            <div>
+                <label htmlFor="rereg-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
+                <select id="rereg-passType" value={passType} onChange={e => setPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                    {PASS_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
+                    ))}
+                </select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label htmlFor="rereg-paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
+                    <input type="date" id="rereg-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                </div>
+                <div>
+                    <label htmlFor="rereg-startDate" className="block text-sm font-medium text-gray-700">이용권 시작일</label>
+                    <input type="date" id="rereg-startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                </div>
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700">결제 방식</label>
+                <div className="mt-2 flex items-center space-x-4">
+                    <label className="flex items-center"><input type="radio" name="rereg-paymentMethod" value="카드" checked={paymentMethod === '카드'} onChange={() => setPaymentMethod('카드')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" /><span className="ml-2">카드</span></label>
+                    <label className="flex items-center"><input type="radio" name="rereg-paymentMethod" value="현금" checked={paymentMethod === '현금'} onChange={() => setPaymentMethod('현금')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" /><span className="ml-2">현금</span></label>
+                </div>
+            </div>
+            {paymentMethod === '현금' && (
+                <div className="pl-1"><label className="flex items-center"><input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)} className="h-4 w-4 rounded" /><span className="ml-2 text-sm font-medium">현금영수증 발행</span></label></div>
+            )}
+            <div className="flex justify-end pt-2">
+                <button type="button" onClick={onCancel} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md mr-2 hover:bg-gray-300">취소</button>
+                <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">추가하기</button>
+            </div>
+        </form>
+    );
+};
+
+
 const StudentDetailModal: React.FC<{
     student: Student;
-    membership: Membership;
+    membership?: Membership; // latest membership
+    allMemberships: Membership[];
     onClose: () => void;
     onSave: (
         studentId: string,
+        membershipId: string,
         studentData: Partial<Omit<Student, 'id'>>,
         membershipData: Partial<Omit<Membership, 'id' | 'studentId'>>
     ) => void;
-}> = ({ student, membership, onClose, onSave }) => {
+    onAddMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+}> = ({ student, membership, allMemberships, onClose, onSave, onAddMembership }) => {
     const [name, setName] = useState(student.name);
     const [phone, setPhone] = useState(student.phone);
     const [remarks, setRemarks] = useState(student.remarks || '');
-    const [passType, setPassType] = useState(membership.passType);
-    const [startDate, setStartDate] = useState(membership.startDate.split('T')[0]);
+    const [passType, setPassType] = useState(membership?.passType || PassType.MONTHLY_3_PER_WEEK);
+    const [startDate, setStartDate] = useState(membership ? membership.startDate.split('T')[0] : '');
+    const [paymentDate, setPaymentDate] = useState(membership ? (membership.paymentDate || membership.startDate).split('T')[0] : '');
     const [holdStart, setHoldStart] = useState('');
     const [holdEnd, setHoldEnd] = useState('');
-    const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>(membership.paymentMethod);
-    const [cashReceiptIssued, setCashReceiptIssued] = useState(membership.cashReceiptIssued || false);
+    const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>(membership?.paymentMethod || '카드');
+    const [cashReceiptIssued, setCashReceiptIssued] = useState(membership?.cashReceiptIssued || false);
+    const [isAddingNew, setIsAddingNew] = useState(false);
 
     if (!student) return null;
 
@@ -142,108 +224,163 @@ const StudentDetailModal: React.FC<{
         if (remarks !== (student.remarks || '')) studentData.remarks = remarks;
 
         const membershipData: Partial<Omit<Membership, 'id' | 'studentId'>> = {};
-        if (passType !== membership.passType) membershipData.passType = passType;
-        if (startDate !== membership.startDate.split('T')[0]) membershipData.startDate = startDate;
-        if (paymentMethod !== membership.paymentMethod) membershipData.paymentMethod = paymentMethod;
-        if (cashReceiptIssued !== (membership.cashReceiptIssued || false)) membershipData.cashReceiptIssued = cashReceiptIssued;
-        
-        if (holdStart && holdEnd && new Date(holdEnd) >= new Date(holdStart)) {
-            membershipData.holdStartDate = holdStart;
-            membershipData.holdEndDate = holdEnd;
+        if (membership) {
+            if (passType !== membership.passType) membershipData.passType = passType;
+            if (startDate !== membership.startDate.split('T')[0]) membershipData.startDate = startDate;
+            if (paymentDate !== (membership.paymentDate || membership.startDate).split('T')[0]) membershipData.paymentDate = paymentDate;
+            if (paymentMethod !== membership.paymentMethod) membershipData.paymentMethod = paymentMethod;
+            if (cashReceiptIssued !== (membership.cashReceiptIssued || false)) membershipData.cashReceiptIssued = cashReceiptIssued;
+            
+            if (holdStart && holdEnd && new Date(holdEnd) >= new Date(holdStart)) {
+                membershipData.holdStartDate = holdStart;
+                membershipData.holdEndDate = holdEnd;
+            }
+            onSave(student.id, membership.id, studentData, membershipData);
+        } else {
+            // This case should ideally not happen if we only allow editing when a membership exists.
+            // But as a fallback, we just save student data.
+             onSave(student.id, '', studentData, {});
         }
-
-        onSave(student.id, studentData, membershipData);
+        onClose();
+    };
+    
+    const handleAddMembership = (...args: Parameters<typeof onAddMembership>) => {
+        onAddMembership(...args);
         onClose();
     };
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-            <div className="bg-white rounded-lg p-8 shadow-2xl w-full max-w-lg m-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg p-8 shadow-2xl w-full max-w-2xl m-4 max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-bold text-gray-800">회원 정보 수정</h2>
+                    <h2 className="text-2xl font-bold text-gray-800">회원 정보 ({student.name})</h2>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
                         <CloseIcon className="w-6 h-6" />
                     </button>
                 </div>
-                <form onSubmit={handleSave} className="space-y-6">
-                    <div className="p-4 border rounded-md">
-                        <h3 className="text-lg font-semibold mb-2 text-gray-700">기본 정보</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                             <div>
-                                <label htmlFor="edit-name" className="block text-sm font-medium text-gray-700">이름</label>
-                                <input type="text" id="edit-name" value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+
+                <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-700 mb-2 border-b pb-2">이용권 내역</h3>
+                    {allMemberships.length > 0 ? (
+                        <ul className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                            {allMemberships.map(m => (
+                                <li key={m.id} className={`p-2 rounded-md text-sm ${m.id === membership?.id ? 'bg-indigo-100 border border-indigo-300' : 'bg-gray-100'}`}>
+                                    <div className="font-semibold">{m.passType}</div>
+                                    <div className="text-gray-600">기간: {new Date(m.startDate).toLocaleDateString('ko-KR')} ~ {new Date(m.endDate).toLocaleDateString('ko-KR')}</div>
+                                    {m.holdStartDate && <div className="text-blue-600">홀딩: {new Date(m.holdStartDate).toLocaleDateString('ko-KR')} ~ {m.holdEndDate ? new Date(m.holdEndDate).toLocaleDateString('ko-KR') : ''}</div>}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-gray-500">등록된 이용권이 없습니다.</p>
+                    )}
+                </div>
+
+                {!isAddingNew && (
+                    <button onClick={() => setIsAddingNew(true)} className="w-full text-center bg-indigo-600 text-white px-4 py-3 rounded-md hover:bg-indigo-700 font-semibold mb-6">
+                        + 신규 이용권 추가 (재등록)
+                    </button>
+                )}
+
+                {isAddingNew ? (
+                     <ReregisterForm 
+                        student={student} 
+                        latestMembership={membership} 
+                        onAddMembership={handleAddMembership} 
+                        onCancel={() => setIsAddingNew(false)}
+                     />
+                ) : (
+                    <form onSubmit={handleSave} className="space-y-6">
+                        <div className="p-4 border rounded-md">
+                            <h3 className="text-lg font-semibold mb-2 text-gray-700">기본 정보 수정</h3>
+                            {/* ... student info fields ... */}
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                 <div>
+                                    <label htmlFor="edit-name" className="block text-sm font-medium text-gray-700">이름</label>
+                                    <input type="text" id="edit-name" value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                                </div>
+                                <div>
+                                    <label htmlFor="edit-phone" className="block text-sm font-medium text-gray-700">연락처</label>
+                                    <input type="tel" id="edit-phone" value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                                </div>
                             </div>
-                            <div>
-                                <label htmlFor="edit-phone" className="block text-sm font-medium text-gray-700">연락처</label>
-                                <input type="tel" id="edit-phone" value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                            <div className="mt-4">
+                                <label htmlFor="edit-remarks" className="block text-sm font-medium text-gray-700">비고</label>
+                                <textarea id="edit-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"></textarea>
                             </div>
                         </div>
-                        <div className="mt-4">
-                            <label htmlFor="edit-remarks" className="block text-sm font-medium text-gray-700">비고</label>
-                            <textarea id="edit-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"></textarea>
-                        </div>
-                    </div>
-                    
-                    <div className="p-4 border rounded-md">
-                        <h3 className="text-lg font-semibold mb-2 text-gray-700">이용권 및 결제 정보</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="edit-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
-                                <select id="edit-passType" value={passType} onChange={e => setPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
-                                    {PASS_OPTIONS.map(option => (
-                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label htmlFor="edit-startDate" className="block text-sm font-medium text-gray-700">시작일</label>
-                                <input type="date" id="edit-startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
-                            </div>
-                        </div>
-                        <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700">결제 방식</label>
-                             <div className="mt-2 flex items-center space-x-4">
-                                <label className="flex items-center">
-                                    <input type="radio" name="paymentMethod-edit" value="카드" checked={paymentMethod === '카드'} onChange={() => setPaymentMethod('카드')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
-                                    <span className="ml-2 text-sm text-gray-700">카드</span>
-                                </label>
-                                <label className="flex items-center">
-                                    <input type="radio" name="paymentMethod-edit" value="현금" checked={paymentMethod === '현금'} onChange={() => setPaymentMethod('현금')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
-                                    <span className="ml-2 text-sm text-gray-700">현금</span>
-                                </label>
-                            </div>
-                        </div>
-                        {paymentMethod === '현금' && (
-                            <div className="mt-4 pl-1">
-                                <label className="flex items-center">
-                                    <input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
-                                    <span className="ml-2 text-sm font-medium text-gray-700">현금영수증 발행</span>
-                                </label>
-                            </div>
+                        
+                        {membership && (
+                            <>
+                                <div className="p-4 border rounded-md">
+                                    <h3 className="text-lg font-semibold mb-2 text-gray-700">최신 이용권 정보 수정</h3>
+                                    {/* ... membership fields ... */}
+                                    <div>
+                                        <label htmlFor="edit-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
+                                        <select id="edit-passType" value={passType} onChange={e => setPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
+                                            {PASS_OPTIONS.map(option => (
+                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                        <div>
+                                            <label htmlFor="edit-paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
+                                            <input type="date" id="edit-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="edit-startDate" className="block text-sm font-medium text-gray-700">이용권 시작일</label>
+                                            <input type="date" id="edit-startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                                        </div>
+                                    </div>
+                                    <div className="mt-4">
+                                        <label className="block text-sm font-medium text-gray-700">결제 방식</label>
+                                         <div className="mt-2 flex items-center space-x-4">
+                                            <label className="flex items-center">
+                                                <input type="radio" name="paymentMethod-edit" value="카드" checked={paymentMethod === '카드'} onChange={() => setPaymentMethod('카드')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
+                                                <span className="ml-2 text-sm text-gray-700">카드</span>
+                                            </label>
+                                            <label className="flex items-center">
+                                                <input type="radio" name="paymentMethod-edit" value="현금" checked={paymentMethod === '현금'} onChange={() => setPaymentMethod('현금')} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" />
+                                                <span className="ml-2 text-sm text-gray-700">현금</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    {paymentMethod === '현금' && (
+                                        <div className="mt-4 pl-1">
+                                            <label className="flex items-center">
+                                                <input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)} className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+                                                <span className="ml-2 text-sm font-medium text-gray-700">현금영수증 발행</span>
+                                            </label>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="p-4 border rounded-md bg-gray-50">
+                                    <h3 className="text-lg font-semibold mb-2 text-gray-700">이용권 홀딩</h3>
+                                    {/* ... hold fields ... */}
+                                    <p className="text-sm text-gray-500 mb-3">홀딩 기간을 설정하면 이용권 만료일이 자동으로 연장됩니다.</p>
+                                    {membership.holdStartDate && <p className="text-sm text-blue-600 mb-3">현재 홀딩: {new Date(membership.holdStartDate).toLocaleDateString('ko-KR')} ~ {membership.holdEndDate ? new Date(membership.holdEndDate).toLocaleDateString('ko-KR') : ''}</p>}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label htmlFor="hold-start" className="block text-sm font-medium text-gray-700">홀딩 시작일</label>
+                                            <input type="date" id="hold-start" value={holdStart} onChange={e => setHoldStart(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="hold-end" className="block text-sm font-medium text-gray-700">홀딩 종료일</label>
+                                            <input type="date" id="hold-end" value={holdEnd} onChange={e => setHoldEnd(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
                         )}
-                    </div>
 
-                    <div className="p-4 border rounded-md bg-gray-50">
-                        <h3 className="text-lg font-semibold mb-2 text-gray-700">이용권 홀딩</h3>
-                        <p className="text-sm text-gray-500 mb-3">홀딩 기간을 설정하면 이용권 만료일이 자동으로 연장됩니다.</p>
-                        {membership.holdStartDate && <p className="text-sm text-blue-600 mb-3">현재 홀딩: {new Date(membership.holdStartDate).toLocaleDateString('ko-KR')} ~ {membership.holdEndDate ? new Date(membership.holdEndDate).toLocaleDateString('ko-KR') : ''}</p>}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="hold-start" className="block text-sm font-medium text-gray-700">홀딩 시작일</label>
-                                <input type="date" id="hold-start" value={holdStart} onChange={e => setHoldStart(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" />
-                            </div>
-                            <div>
-                                <label htmlFor="hold-end" className="block text-sm font-medium text-gray-700">홀딩 종료일</label>
-                                <input type="date" id="hold-end" value={holdEnd} onChange={e => setHoldEnd(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" />
-                            </div>
+                        <div className="flex justify-end pt-4">
+                            <button type="button" onClick={onClose} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md mr-2 hover:bg-gray-300">취소</button>
+                            <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">정보 수정 저장</button>
                         </div>
-                    </div>
-
-                    <div className="flex justify-end pt-4">
-                        <button type="button" onClick={onClose} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md mr-2 hover:bg-gray-300">취소</button>
-                        <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">저장</button>
-                    </div>
-                </form>
+                    </form>
+                )}
             </div>
         </div>
     );
@@ -346,35 +483,25 @@ function parseCsvLine(line: string): string[] {
 }
 
 
-export const StudentManager: React.FC<StudentManagerProps> = ({ students, memberships, addStudent, deleteStudent, updateStudentAndMembership, bulkExtendMemberships, importStudentsAndMemberships }) => {
+export const StudentManager: React.FC<StudentManagerProps> = ({ students, memberships, addStudent, addMembership, deleteStudent, updateStudentAndMembership, bulkExtendMemberships, importStudentsAndMemberships }) => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isBulkExtendModalOpen, setIsBulkExtendModalOpen] = useState(false);
     const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
-    const studentData = useMemo(() => {
-        return students
-            .map(student => {
-                const membership = memberships.find(m => m.studentId === student.id);
-                return { ...student, membership };
-            })
-            .filter(student => student.name.toLowerCase().includes(searchTerm.toLowerCase()))
-            .sort((a,b) => a.name.localeCompare(b.name));
-    }, [students, memberships, searchTerm]);
-    
-    const selectedStudentData = useMemo(() => {
-        if (!selectedStudentId) return null;
-        const student = students.find(s => s.id === selectedStudentId);
-        const membership = memberships.find(m => m.studentId === selectedStudentId);
-        if (!student || !membership) return null;
-        return { student, membership };
-    }, [selectedStudentId, students, memberships]);
-
     const getStatus = (membership: Membership | undefined): { text: string; color: string } => {
         if (!membership) return { text: '이용권 없음', color: 'bg-gray-200 text-gray-800' };
-        
+
         const today = new Date();
         today.setHours(0, 0, 0, 0);
+        const start = new Date(membership.startDate);
+        start.setHours(0, 0, 0, 0);
+
+        // This check must come first.
+        if (start > today) {
+            const diffDays = Math.ceil((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            return { text: `시작 ${diffDays}일 전`, color: 'bg-cyan-200 text-cyan-800' };
+        }
 
         if (membership.holdStartDate && membership.holdEndDate) {
             const holdStart = new Date(membership.holdStartDate);
@@ -383,15 +510,88 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                 return { text: '홀딩중', color: 'bg-blue-200 text-blue-800' };
             }
         }
-        
+
         const end = new Date(membership.endDate);
-        end.setHours(0,0,0,0);
+        end.setHours(0, 0, 0, 0);
         const diffDays = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
         if (diffDays < 0) return { text: '만료됨', color: 'bg-red-200 text-red-800' };
         if (diffDays <= 7) return { text: `${diffDays + 1}일 남음`, color: 'bg-yellow-200 text-yellow-800' };
         return { text: '이용중', color: 'bg-green-200 text-green-800' };
     };
+
+    const studentData = useMemo(() => {
+        return students
+            .map(student => {
+                const studentMemberships = memberships.filter(m => m.studentId === student.id);
+
+                if (studentMemberships.length === 0) {
+                    return { ...student, membership: undefined, combinedEndDate: undefined };
+                }
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                // 1. Find a membership that is currently active.
+                const currentMembership = studentMemberships.find(m => {
+                    const startDate = new Date(m.startDate);
+                    const endDate = new Date(m.endDate);
+                    return startDate <= today && endDate >= today;
+                });
+
+                let representativeMembership: Membership | undefined;
+
+                if (currentMembership) {
+                    representativeMembership = currentMembership;
+                } else {
+                    // 2. If no current, find the one that starts soonest in the future.
+                    const future = studentMemberships
+                        .filter(m => new Date(m.startDate) > today)
+                        .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+                    if (future.length > 0) {
+                        representativeMembership = future[0];
+                    } else {
+                        // 3. If no current or future, find the one that expired most recently.
+                        const past = studentMemberships
+                            .filter(m => new Date(m.endDate) < today)
+                            .sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime());
+
+                        if (past.length > 0) {
+                            representativeMembership = past[0];
+                        } else {
+                            // Fallback: just take the one that ends last
+                            representativeMembership = [...studentMemberships].sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
+                        }
+                    }
+                }
+
+                // Calculate combined end date from all non-expired memberships
+                let combinedEndDate: string | undefined;
+                const nonExpiredMemberships = studentMemberships.filter(m => new Date(m.endDate) >= today);
+
+                if (nonExpiredMemberships.length > 0) {
+                    const latestEndDate = nonExpiredMemberships.reduce((latest, current) => {
+                        return new Date(current.endDate) > new Date(latest) ? current.endDate : latest;
+                    }, nonExpiredMemberships[0].endDate);
+                    combinedEndDate = latestEndDate;
+                }
+
+                return { ...student, membership: representativeMembership, combinedEndDate };
+            })
+            .filter(student => student.name.toLowerCase().includes(searchTerm.toLowerCase()))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [students, memberships, searchTerm]);
+    
+    const selectedStudentData = useMemo(() => {
+        if (!selectedStudentId) return null;
+        const student = students.find(s => s.id === selectedStudentId);
+        if (!student) return null;
+        const studentMemberships = memberships
+            .filter(m => m.studentId === selectedStudentId)
+            .sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime());
+        return { student, allMemberships: studentMemberships, latestMembership: studentMemberships[0] };
+    }, [selectedStudentId, students, memberships]);
 
     const handleExport = () => {
         if (students.length === 0) {
@@ -410,6 +610,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
             membership_startDate: '이용권 시작일',
             membership_endDate: '이용권 만료일',
             membership_price: '결제 금액',
+            membership_paymentDate: '결제일',
             membership_paymentMethod: '결제 방식',
             membership_cashReceiptIssued: '현금영수증 발행',
             membership_holdStartDate: '홀딩 시작일',
@@ -419,8 +620,17 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
         const koreanHeaders = Object.values(headerMapping);
 
         const dataToExport = students.map(student => {
-            const membership = memberships.find(m => m.studentId === student.id);
-            return {
+            const studentMemberships = memberships.filter(m => m.studentId === student.id);
+            if (studentMemberships.length === 0) {
+                 return {
+                    student_id: student.id,
+                    student_name: student.name,
+                    student_phone: student.phone,
+                    student_registrationDate: student.registrationDate,
+                    student_remarks: student.remarks || '',
+                 }
+            }
+            return studentMemberships.map(membership => ({
                 student_id: student.id,
                 student_name: student.name,
                 student_phone: student.phone,
@@ -431,12 +641,13 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                 membership_startDate: membership?.startDate || '',
                 membership_endDate: membership?.endDate || '',
                 membership_price: membership?.price === undefined ? '' : membership.price,
+                membership_paymentDate: membership?.paymentDate || '',
                 membership_paymentMethod: membership?.paymentMethod || '',
                 membership_cashReceiptIssued: membership?.cashReceiptIssued || false,
                 membership_holdStartDate: membership?.holdStartDate || '',
                 membership_holdEndDate: membership?.holdEndDate || '',
-            };
-        });
+            }));
+        }).flat();
 
         const csvRows = dataToExport.map(row => 
             englishHeaders.map(header => {
@@ -494,6 +705,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                     '이용권 시작일': 'membership_startDate',
                     '이용권 만료일': 'membership_endDate',
                     '결제 금액': 'membership_price',
+                    '결제일': 'membership_paymentDate',
                     '결제 방식': 'membership_paymentMethod',
                     '현금영수증 발행': 'membership_cashReceiptIssued',
                     '홀딩 시작일': 'membership_holdStartDate',
@@ -545,7 +757,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                         isValid = false;
                     }
 
-                    ['student_registrationDate', 'membership_startDate', 'membership_endDate', 'membership_holdStartDate', 'membership_holdEndDate'].forEach(dateKey => {
+                    ['student_registrationDate', 'membership_startDate', 'membership_endDate', 'membership_holdStartDate', 'membership_holdEndDate', 'membership_paymentDate'].forEach(dateKey => {
                         if (rowObj[dateKey] && isNaN(new Date(rowObj[dateKey]).getTime())) {
                             const koreanHeader = Object.keys(koreanToEnglishMap).find(k => koreanToEnglishMap[k] === dateKey);
                             errorLogs.push(`줄 ${rowIndexForError}: '${koreanHeader}'의 날짜 형식이 올바르지 않습니다.`);
@@ -621,22 +833,24 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
             {selectedStudentData && (
                 <StudentDetailModal 
                     student={selectedStudentData.student}
-                    membership={selectedStudentData.membership}
+                    membership={selectedStudentData.latestMembership}
+                    allMemberships={selectedStudentData.allMemberships}
                     onClose={() => setSelectedStudentId(null)}
                     onSave={updateStudentAndMembership}
+                    onAddMembership={addMembership}
                 />
             )}
 
             <div className="bg-white shadow-md rounded-lg overflow-x-auto">
-                <table className="w-full text-sm text-left text-gray-500">
+                <table className="w-full text-sm text-left text-gray-500 table-fixed">
                     <thead className="text-xs text-gray-700 uppercase bg-gray-100">
                         <tr>
-                            <th scope="col" className="px-6 py-3">이름</th>
-                            <th scope="col" className="px-6 py-3">비고</th>
-                            <th scope="col" className="px-6 py-3">이용권</th>
-                            <th scope="col" className="px-6 py-3">기간</th>
-                            <th scope="col" className="px-6 py-3">상태</th>
-                            <th scope="col" className="px-6 py-3">연락처</th>
+                            <th scope="col" className="px-6 py-3 w-[15%]">이름</th>
+                            <th scope="col" className="px-6 py-3 w-[25%]">비고</th>
+                            <th scope="col" className="px-6 py-3 w-[20%]">이용권</th>
+                            <th scope="col" className="px-6 py-3 w-[15%]">기간</th>
+                            <th scope="col" className="px-6 py-3 w-[10%]">상태</th>
+                            <th scope="col" className="px-6 py-3 w-[10%]">연락처</th>
                             <th scope="col" className="px-6 py-3 text-right">관리</th>
                         </tr>
                     </thead>
@@ -645,20 +859,20 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                             const status = getStatus(s.membership);
                             return (
                                 <tr key={s.id} className="bg-white border-b hover:bg-gray-50">
-                                    <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
+                                    <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap truncate" title={s.name}>
                                         <button onClick={() => setSelectedStudentId(s.id)} className="text-indigo-600 hover:text-indigo-800 hover:underline font-semibold">
                                             {s.name}
                                         </button>
                                     </td>
-                                    <td className="px-6 py-4 text-gray-600 truncate max-w-xs">{s.remarks || '-'}</td>
-                                    <td className="px-6 py-4">{s.membership?.passType || 'N/A'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{s.membership ? `${new Date(s.membership.startDate).toLocaleDateString()} ~ ${new Date(s.membership.endDate).toLocaleDateString()}` : 'N/A'}</td>
+                                    <td className="px-6 py-4 text-gray-600 truncate" title={s.remarks || '-'}>{s.remarks || '-'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap truncate" title={s.membership?.passType || 'N/A'}>{s.membership?.passType || 'N/A'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{s.membership ? `${new Date(s.membership.startDate).toLocaleDateString('ko-KR')} ~ ${new Date(s.combinedEndDate || s.membership.endDate).toLocaleDateString('ko-KR')}` : 'N/A'}</td>
                                     <td className="px-6 py-4">
                                         <span className={`px-2 py-1 text-xs font-semibold rounded-full ${status.color}`}>
                                             {status.text}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4">{s.phone}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap truncate" title={s.phone}>{s.phone}</td>
                                     <td className="px-6 py-4 text-right">
                                         <button 
                                             onClick={() => {

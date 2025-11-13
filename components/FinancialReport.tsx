@@ -53,8 +53,8 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ memberships, e
         end.setHours(23, 59, 59, 999);
 
         const membershipsInPeriod = memberships.filter(m => {
-            const mDate = new Date(m.startDate);
-            return mDate >= start && mDate <= end;
+            const paymentDate = new Date(m.paymentDate || m.startDate);
+            return paymentDate >= start && paymentDate <= end;
         });
 
         const expensesInPeriod = expenses.filter(e => {
@@ -78,7 +78,7 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ memberships, e
         const expByCatData = Object.entries(expByCat).map(([name, value]) => ({ name, value: value || 0}));
 
         const incomeTransactions = membershipsInPeriod.map(m => ({
-            date: m.startDate,
+            date: m.paymentDate || m.startDate,
             type: '매출',
             description: `${students.find(s => s.id === m.studentId)?.name || '알수없음'} - ${m.passType}`,
             amount: m.price

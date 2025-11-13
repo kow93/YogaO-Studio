@@ -24,6 +24,7 @@ export interface Membership {
   startDate: string; // ISO string
   endDate: string; // ISO string
   price: number;
+  paymentDate?: string; // ISO string
   holdStartDate?: string;
   holdEndDate?: string;
   paymentMethod: '카드' | '현금';
