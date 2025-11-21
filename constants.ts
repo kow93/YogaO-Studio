@@ -1,3 +1,4 @@
+
 import { PassType, ExpenseCategory, ClassSchedule } from './types';
 
 export const PASS_OPTIONS: { label: PassType; value: PassType }[] = [
@@ -22,15 +23,15 @@ export const PASS_PRICES: Record<PassType, number> = {
     [PassType.QUARTERLY_5_PER_WEEK]: 480000,
 };
 
-export const PASS_DURATIONS_DAYS: Record<PassType, number> = {
-    [PassType.ONE_DAY]: 1,
-    [PassType.ONE_WEEK]: 7,
-    [PassType.MONTHLY_2_PER_WEEK]: 30,
-    [PassType.QUARTERLY_2_PER_WEEK]: 90,
-    [PassType.MONTHLY_3_PER_WEEK]: 30,
-    [PassType.QUARTERLY_3_PER_WEEK]: 90,
-    [PassType.MONTHLY_5_PER_WEEK]: 30,
-    [PassType.QUARTERLY_5_PER_WEEK]: 90,
+export const PASS_DURATIONS: Record<PassType, { unit: 'day' | 'month'; value: number }> = {
+    [PassType.ONE_DAY]: { unit: 'day', value: 1 },
+    [PassType.ONE_WEEK]: { unit: 'day', value: 7 },
+    [PassType.MONTHLY_2_PER_WEEK]: { unit: 'month', value: 1 },
+    [PassType.QUARTERLY_2_PER_WEEK]: { unit: 'month', value: 3 },
+    [PassType.MONTHLY_3_PER_WEEK]: { unit: 'month', value: 1 },
+    [PassType.QUARTERLY_3_PER_WEEK]: { unit: 'month', value: 3 },
+    [PassType.MONTHLY_5_PER_WEEK]: { unit: 'month', value: 1 },
+    [PassType.QUARTERLY_5_PER_WEEK]: { unit: 'month', value: 3 },
 };
 
 export const CLASS_TIMES = ['10:10 - 11:10', '18:10 - 19:10', '19:40 - 20:40'];

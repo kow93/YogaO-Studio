@@ -1,13 +1,44 @@
+
 import React, { useState, useCallback } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule } from './types';
-import { PASS_PRICES, PASS_DURATIONS_DAYS, DEFAULT_SCHEDULE } from './constants';
+import { PASS_PRICES, PASS_DURATIONS, DEFAULT_SCHEDULE } from './constants';
 import { Dashboard } from './components/Dashboard';
 import { StudentManager } from './components/StudentManager';
 import { ScheduleManager } from './components/ScheduleManager';
 import { ExpenseManager } from './components/ExpenseManager';
 import { FinancialReport } from './components/FinancialReport';
 import { DashboardIcon, StudentsIcon, AttendanceIcon, ExpenseIcon, FinancialsIcon } from './components/icons';
+
+const calculateEndDate = (startDate: Date, passType: PassType): Date => {
+    const duration = PASS_DURATIONS[passType];
+    const end = new Date(startDate);
+
+    if (duration.unit === 'month') {
+        const monthsToAdd = duration.value;
+        const originalDay = end.getDate();
+        
+        // Add months
+        end.setMonth(end.getMonth() + monthsToAdd);
+        
+        // Handle month overflow (e.g. Jan 31 -> Feb 28)
+        // If the day changed, it means the target month has fewer days.
+        // We should set it to the last day of the previous month (which is the intended month).
+        if (end.getDate() !== originalDay) {
+            end.setDate(0);
+        }
+
+        // Calculate days to subtract based on rule:
+        // 1~3 months (floor(m/3)=0 or 1) -> -1 day (max(1, 0~1) = 1)
+        // 6 months (floor(6/3)=2) -> -2 days (max(1, 2) = 2)
+        const daysToSubtract = Math.max(1, Math.floor(monthsToAdd / 3));
+        end.setDate(end.getDate() - daysToSubtract);
+    } else {
+        // Day based
+        end.setDate(end.getDate() + duration.value - 1);
+    }
+    return end;
+};
 
 const App: React.FC = () => {
     const [view, setView] = useState<ViewType>('dashboard');
@@ -26,8 +57,7 @@ const App: React.FC = () => {
         const newStudent: Student = { ...studentData, id: studentId, registrationDate };
         
         const startDate = new Date(startDateStr);
-        const endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + PASS_DURATIONS_DAYS[passType] - 1);
+        const endDate = calculateEndDate(startDate, passType);
 
         const newMembership: Membership = {
             id: crypto.randomUUID(),
@@ -46,23 +76,43 @@ const App: React.FC = () => {
     }, []);
 
     const addMembership = useCallback((studentId: string, passType: PassType, startDateStr: string, paymentDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
-        const startDate = new Date(startDateStr);
-        const endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + PASS_DURATIONS_DAYS[passType] - 1);
+        setMemberships(prev => {
+            const studentMemberships = prev.filter(m => m.studentId === studentId);
+            const latestMembership = studentMemberships.sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
+            
+            const startDate = new Date(startDateStr);
+            let endDate: Date;
 
-        const newMembership: Membership = {
-            id: crypto.randomUUID(),
-            studentId,
-            passType,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            price: PASS_PRICES[passType],
-            paymentDate: new Date(paymentDateStr).toISOString(),
-            paymentMethod,
-            cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
-        };
+            if (latestMembership) {
+                // 추가 등록 로직: 이전 이용권의 종료일을 기준으로 계산
+                const prevEndDate = new Date(latestMembership.endDate);
+                const calculatedFromPrev = calculateEndDate(prevEndDate, passType);
+                
+                // 계산된 종료일이 시작일보다 미래인 경우에만 적용 (연속적인 등록인 경우)
+                // 공백기가 길어서 과거 날짜가 나오는 경우 방지
+                if (calculatedFromPrev > startDate) {
+                    endDate = calculatedFromPrev;
+                } else {
+                    endDate = calculateEndDate(startDate, passType);
+                }
+            } else {
+                endDate = calculateEndDate(startDate, passType);
+            }
 
-        setMemberships(prev => [...prev, newMembership]);
+            const newMembership: Membership = {
+                id: crypto.randomUUID(),
+                studentId,
+                passType,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString(),
+                price: PASS_PRICES[passType],
+                paymentDate: new Date(paymentDateStr).toISOString(),
+                paymentMethod,
+                cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
+            };
+
+            return [...prev, newMembership];
+        });
     }, []);
 
     const deleteStudent = useCallback((studentIdToDelete: string) => {
@@ -88,11 +138,11 @@ const App: React.FC = () => {
             // Determine the correct start date and pass type for calculation
             const startDate = new Date(newFullMembershipData.startDate);
             const passType = newFullMembershipData.passType;
-            const duration = PASS_DURATIONS_DAYS[passType];
 
             // Calculate the base end date from the start date and pass duration, ignoring any previous holds.
-            const baseEndDate = new Date(startDate);
-            baseEndDate.setDate(startDate.getDate() + duration - 1);
+            // Note: For edits, we stick to calculating from Start Date as we don't track which logic was used initially easily,
+            // or we assume user is manually adjusting if they are editing dates.
+            const baseEndDate = calculateEndDate(startDate, passType);
 
             // Apply the new hold duration to the fresh base end date.
             let finalEndDate = baseEndDate;
