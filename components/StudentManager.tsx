@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Student, Membership, PassType } from '../types';
 import { PASS_OPTIONS, PASS_PRICES } from '../constants';
@@ -155,10 +156,17 @@ const ReregisterForm: React.FC<{
             <div>
                 <label htmlFor="rereg-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
                 <select id="rereg-passType" value={passType} onChange={e => setPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-                    {PASS_OPTIONS.map(option => (
-                        <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
-                    ))}
+                    {PASS_OPTIONS.map(option => {
+                        const isDiscountable = option.value !== PassType.ONE_DAY && option.value !== PassType.ONE_WEEK;
+                        const price = PASS_PRICES[option.value] - (isDiscountable ? 10000 : 0);
+                        return (
+                            <option key={option.value} value={option.value}>
+                                {option.label} - {price.toLocaleString()}원 {isDiscountable ? '(재등록 할인 적용)' : ''}
+                            </option>
+                        );
+                    })}
                 </select>
+                <p className="text-xs text-indigo-600 mt-1">* 재등록 시 10,000원 자동 할인이 적용됩니다. (원데이/1주일권 제외)</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -267,6 +275,7 @@ const StudentDetailModal: React.FC<{
                                 <li key={m.id} className={`p-2 rounded-md text-sm ${m.id === membership?.id ? 'bg-indigo-100 border border-indigo-300' : 'bg-gray-100'}`}>
                                     <div className="font-semibold">{m.passType}</div>
                                     <div className="text-gray-600">기간: {new Date(m.startDate).toLocaleDateString('ko-KR')} ~ {new Date(m.endDate).toLocaleDateString('ko-KR')}</div>
+                                    <div className="text-gray-600">금액: {m.price ? m.price.toLocaleString() + '원' : '-'}</div>
                                     {m.holdStartDate && <div className="text-blue-600">홀딩: {new Date(m.holdStartDate).toLocaleDateString('ko-KR')} ~ {m.holdEndDate ? new Date(m.holdEndDate).toLocaleDateString('ko-KR') : ''}</div>}
                                 </li>
                             ))}

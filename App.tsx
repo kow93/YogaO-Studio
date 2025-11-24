@@ -82,8 +82,11 @@ const App: React.FC = () => {
             
             const startDate = new Date(startDateStr);
             let endDate: Date;
+            const duration = PASS_DURATIONS[passType];
 
-            if (latestMembership) {
+            // Only apply the "relative to previous end date" logic for MONTH based passes.
+            // Day based passes (One Day, One Week) should strictly follow the start date duration.
+            if (latestMembership && duration.unit === 'month') {
                 // 추가 등록 로직: 이전 이용권의 종료일을 기준으로 계산
                 const prevEndDate = new Date(latestMembership.endDate);
                 const calculatedFromPrev = calculateEndDate(prevEndDate, passType);
@@ -99,13 +102,19 @@ const App: React.FC = () => {
                 endDate = calculateEndDate(startDate, passType);
             }
 
+            // 재등록 할인: 10,000원 차감 (원데이, 1주일권 제외)
+            let price = PASS_PRICES[passType];
+            if (passType !== PassType.ONE_DAY && passType !== PassType.ONE_WEEK) {
+                price -= 10000;
+            }
+
             const newMembership: Membership = {
                 id: crypto.randomUUID(),
                 studentId,
                 passType,
                 startDate: startDate.toISOString(),
                 endDate: endDate.toISOString(),
-                price: PASS_PRICES[passType],
+                price: price, // 할인된 가격 적용
                 paymentDate: new Date(paymentDateStr).toISOString(),
                 paymentMethod,
                 cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
@@ -162,6 +171,7 @@ const App: React.FC = () => {
             newFullMembershipData.endDate = finalEndDate.toISOString();
             
             // If passType was changed, the price needs to be updated too.
+            // 주의: 수정 시에는 재등록 할인이 풀릴 수 있음 (정책 결정 필요). 현재는 정가로 리셋.
             if (updatedMembershipData.passType) {
                  newFullMembershipData.price = PASS_PRICES[passType];
             }
