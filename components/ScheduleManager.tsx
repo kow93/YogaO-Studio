@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student, AttendanceRecord, Membership, ClassSchedule } from '../types';
 import { CLASS_COLORS } from '../constants';
-import { CloseIcon } from './icons';
+import { CloseIcon, DownloadIcon, UploadIcon } from './icons';
 
 interface ScheduleManagerProps {
     students: Student[];
@@ -11,6 +12,7 @@ interface ScheduleManagerProps {
     schedule: ClassSchedule[];
     addOrUpdateSchedule: (classData: ClassSchedule) => void;
     deleteSchedule: (classId: string) => void;
+    importAttendance: (data: any[]) => void;
 }
 
 const DAYS = ['월', '화', '수', '목', '금', '토'];
@@ -23,6 +25,33 @@ const getStartOfWeek = (date: Date) => {
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
     return new Date(d.setDate(diff));
 };
+
+// CSV Parser (Duplicated from StudentManager to avoid file dependency issues in single file edit context, or could be moved to utils)
+function parseCsvLine(line: string): string[] {
+    const result: string[] = [];
+    let currentField = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+                // Escaped quote
+                currentField += '"';
+                i++; // Skip next quote
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (char === ',' && !inQuotes) {
+            result.push(currentField.trim());
+            currentField = '';
+        } else {
+            currentField += char;
+        }
+    }
+    result.push(currentField.trim()); // Add the last field
+    return result;
+}
+
 
 export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -67,6 +96,125 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
             setModalInfo(null);
         }
     };
+
+    const handleExport = () => {
+        if (props.attendance.length === 0) {
+            alert('내보낼 출석 데이터가 없습니다.');
+            return;
+        }
+
+        const headerMapping = {
+            student_id: '회원 ID',
+            student_name: '이름',
+            student_phone: '연락처',
+            attendance_date: '출석 날짜',
+            class_time: '수업 시간 정보'
+        };
+        const englishHeaders = Object.keys(headerMapping);
+        const koreanHeaders = Object.values(headerMapping);
+
+        const dataToExport = props.attendance.map(record => {
+            const student = props.students.find(s => s.id === record.studentId);
+            return {
+                student_id: record.studentId,
+                student_name: student ? student.name : '알 수 없음',
+                student_phone: student ? student.phone : '',
+                attendance_date: record.date,
+                class_time: record.classTime
+            };
+        });
+
+        const csvRows = dataToExport.map(row => 
+            englishHeaders.map(header => {
+                let value = row[header as keyof typeof row];
+                if (value === null || value === undefined) return '';
+                let stringValue = String(value);
+                if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                    stringValue = `"${stringValue.replace(/"/g, '""')}"`;
+                }
+                return stringValue;
+            }).join(',')
+        );
+
+        const csvContent = "\uFEFF" + [koreanHeaders.join(','), ...csvRows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        const today = new Date().toISOString().split('T')[0];
+        link.setAttribute('download', `yogao_attendance_${today}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target?.result as string;
+            if (!text) {
+                alert('파일을 읽을 수 없습니다.');
+                return;
+            }
+
+            try {
+                const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+                if (lines.length < 2) {
+                    alert('파일에 헤더 외 데이터가 없습니다.');
+                    return;
+                }
+                
+                const koreanToEnglishMap: { [key: string]: string } = {
+                    '회원 ID': 'student_id',
+                    '이름': 'student_name',
+                    '연락처': 'student_phone',
+                    '출석 날짜': 'attendance_date',
+                    '수업 시간 정보': 'class_time'
+                };
+
+                const headerLine = parseCsvLine(lines[0]).map(h => h.trim().replace(/^\uFEFF/, ''));
+                const headerIndexMap: { [key: string]: number } = {};
+                
+                headerLine.forEach((h, i) => {
+                    const englishKey = koreanToEnglishMap[h];
+                    if (englishKey) headerIndexMap[englishKey] = i;
+                });
+
+                const validData: any[] = [];
+                
+                lines.slice(1).forEach(line => {
+                    const values = parseCsvLine(line);
+                    const rowObj: { [key: string]: any } = {};
+                    
+                    Object.keys(headerIndexMap).forEach(englishKey => {
+                        const idx = headerIndexMap[englishKey];
+                        if (values[idx] !== undefined) {
+                            rowObj[englishKey] = values[idx];
+                        }
+                    });
+
+                    if (rowObj.attendance_date && rowObj.class_time) {
+                        validData.push(rowObj);
+                    }
+                });
+
+                if (validData.length > 0) {
+                    props.importAttendance(validData);
+                } else {
+                    alert('가져올 유효한 출석 데이터가 없습니다.');
+                }
+
+            } catch (error) {
+                console.error("Error parsing CSV:", error);
+                alert("CSV 파일을 처리하는 중 오류가 발생했습니다.");
+            }
+        };
+        reader.readAsText(file, 'UTF-8');
+        event.target.value = '';
+    };
     
     const renderClassBlock = (classItem: ClassSchedule, dayIndex: number) => {
         const [startHour, startMinute] = classItem.startTime.split(':').map(Number);
@@ -110,10 +258,23 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <h1 className="text-3xl font-bold text-gray-800">시간표 & 출결 관리</h1>
-                <div className="flex items-center gap-4">
-                    <button onClick={() => setCurrentDate(d => new Date(d.setDate(d.getDate() - 7)))} className="px-3 py-1 rounded bg-white border shadow-sm">&lt; 이전 주</button>
-                    <span className="font-semibold">{startOfWeek.toLocaleDateString('ko-KR')} ~ {new Date(new Date(startOfWeek).setDate(startOfWeek.getDate() + 5)).toLocaleDateString('ko-KR')}</span>
-                    <button onClick={() => setCurrentDate(d => new Date(d.setDate(d.getDate() + 7)))} className="px-3 py-1 rounded bg-white border shadow-sm">다음 주 &gt;</button>
+                
+                <div className="flex items-center gap-2 w-full md:w-auto flex-wrap justify-start md:justify-end">
+                     <div className="flex items-center gap-4 mr-4">
+                        <button onClick={() => setCurrentDate(d => new Date(d.setDate(d.getDate() - 7)))} className="px-3 py-1 rounded bg-white border shadow-sm">&lt; 이전 주</button>
+                        <span className="font-semibold">{startOfWeek.toLocaleDateString('ko-KR')} ~ {new Date(new Date(startOfWeek).setDate(startOfWeek.getDate() + 5)).toLocaleDateString('ko-KR')}</span>
+                        <button onClick={() => setCurrentDate(d => new Date(d.setDate(d.getDate() + 7)))} className="px-3 py-1 rounded bg-white border shadow-sm">다음 주 &gt;</button>
+                    </div>
+                    
+                    <div className="h-6 w-px bg-gray-300 mx-2 hidden md:block"></div>
+
+                    <input type="file" id="attendance-import" className="hidden" accept=".csv" onChange={handleImport} />
+                    <label htmlFor="attendance-import" className="bg-gray-600 text-white px-3 py-2 rounded-md hover:bg-gray-700 whitespace-nowrap cursor-pointer inline-flex items-center gap-2 text-sm">
+                        <UploadIcon className="w-4 h-4" /> 출석부 가져오기
+                    </label>
+                    <button onClick={handleExport} className="bg-gray-600 text-white px-3 py-2 rounded-md hover:bg-gray-700 whitespace-nowrap inline-flex items-center gap-2 text-sm">
+                       <DownloadIcon className="w-4 h-4" /> 출석부 내보내기
+                    </button>
                 </div>
             </div>
 

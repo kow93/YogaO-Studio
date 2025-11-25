@@ -337,6 +337,50 @@ const App: React.FC = () => {
         alert(`${addedCount}명의 신규 회원을 등록하고 ${updatedCount}명의 회원 정보를 업데이트했습니다.`);
     };
 
+    const importAttendance = useCallback((data: any[]) => {
+        let addedCount = 0;
+        setAttendance(prev => {
+            const newRecords = [...prev];
+            
+            data.forEach(item => {
+                let targetStudentId = item.student_id;
+                
+                // ID가 없는 경우 이름과 전화번호로 매칭 시도 (기존 데이터 호환성)
+                if (!targetStudentId && item.student_name) {
+                    const found = students.find(s => s.name === item.student_name && (!item.student_phone || s.phone === item.student_phone));
+                    if (found) targetStudentId = found.id;
+                }
+
+                if (targetStudentId && item.attendance_date && item.class_time) {
+                    // 중복 체크
+                    const exists = newRecords.some(r =>
+                        r.studentId === targetStudentId &&
+                        r.date === item.attendance_date &&
+                        r.classTime === item.class_time
+                    );
+                    
+                    if (!exists) {
+                        newRecords.push({
+                            id: crypto.randomUUID(),
+                            studentId: targetStudentId,
+                            date: item.attendance_date,
+                            classTime: item.class_time
+                        });
+                        addedCount++;
+                    }
+                }
+            });
+            
+            if (addedCount > 0) {
+                alert(`${addedCount}개의 출석 기록을 성공적으로 가져왔습니다.`);
+            } else {
+                alert('새로 추가할 출석 기록이 없습니다. (모두 중복이거나 유효하지 않음)');
+            }
+            
+            return newRecords;
+        });
+    }, [students]);
+
     const toggleAttendance = (studentId: string, date: string, classTime: string) => {
         const existingRecord = attendance.find(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
         if (existingRecord) {
@@ -375,7 +419,7 @@ const App: React.FC = () => {
             case 'students':
                 return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} bulkExtendMemberships={bulkExtendMemberships} importStudentsAndMemberships={importStudentsAndMemberships} addMembership={addMembership} upgradeMembership={upgradeMembership} />;
             case 'schedule':
-                return <ScheduleManager students={students} memberships={memberships} attendance={attendance} toggleAttendance={toggleAttendance} schedule={schedule} addOrUpdateSchedule={addOrUpdateSchedule} deleteSchedule={deleteSchedule} />;
+                return <ScheduleManager students={students} memberships={memberships} attendance={attendance} toggleAttendance={toggleAttendance} schedule={schedule} addOrUpdateSchedule={addOrUpdateSchedule} deleteSchedule={deleteSchedule} importAttendance={importAttendance} />;
             case 'expenses':
                 return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} />;
             case 'financials':
