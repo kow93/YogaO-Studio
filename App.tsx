@@ -22,8 +22,6 @@ const calculateEndDate = (startDate: Date, passType: PassType): Date => {
         end.setMonth(end.getMonth() + monthsToAdd);
         
         // Handle month overflow (e.g. Jan 31 -> Feb 28)
-        // If the day changed, it means the target month has fewer days.
-        // We should set it to the last day of the previous month (which is the intended month).
         if (end.getDate() !== originalDay) {
             end.setDate(0);
         }
@@ -43,12 +41,10 @@ const calculateEndDate = (startDate: Date, passType: PassType): Date => {
 const App: React.FC = () => {
     const [view, setView] = useState<ViewType>('dashboard');
     
-    // 데이터 유지를 위해 useLocalStorage 사용으로 변경
     const [students, setStudents] = useLocalStorage<Student[]>('students', []);
     const [memberships, setMemberships] = useLocalStorage<Membership[]>('memberships', []);
     const [attendance, setAttendance] = useLocalStorage<AttendanceRecord[]>('attendance', []);
     
-    // 스튜디오 운영 데이터는 유지되도록 useLocalStorage를 사용합니다.
     const [expenses, setExpenses] = useLocalStorage<Expense[]>('expenses', []);
     const [schedule, setSchedule] = useLocalStorage<ClassSchedule[]>('schedule', DEFAULT_SCHEDULE);
 
@@ -74,24 +70,18 @@ const App: React.FC = () => {
 
         setStudents(prev => [...prev, newStudent]);
         setMemberships(prev => [...prev, newMembership]);
-    }, []);
+    }, [setStudents, setMemberships]);
 
     const addMembership = useCallback((studentId: string, passType: PassType, startDateStr: string, paymentDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
         setMemberships(prev => {
             const startDate = new Date(startDateStr);
-            // 날짜 계산: 시작일을 기준으로 기간을 더하고 규칙에 따라 1일 또는 2일을 뺍니다.
             const endDate = calculateEndDate(startDate, passType);
 
-            // 이전 멤버십 확인 (할인 적용 여부 판단용)
             const studentMemberships = prev.filter(m => m.studentId === studentId);
-            // 종료일 기준 내림차순 정렬하여 가장 최근 이용권 확인
             const lastMembership = studentMemberships.sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
 
             let price = PASS_PRICES[passType];
 
-            // 할인 로직 수정:
-            // 1. 새로 등록하는 이용권이 원데이/1주일권이면 할인 제외 (PassType 확인)
-            // 2. 직전 이용권이 원데이/1주일권이면 할인 제외 (lastMembership 확인)
             const isNewPassShortTerm = passType === PassType.ONE_DAY || passType === PassType.ONE_WEEK;
             const isPrevPassShortTerm = lastMembership && (lastMembership.passType === PassType.ONE_DAY || lastMembership.passType === PassType.ONE_WEEK);
 
@@ -105,7 +95,7 @@ const App: React.FC = () => {
                 passType,
                 startDate: startDate.toISOString(),
                 endDate: endDate.toISOString(),
-                price: price, // 계산된 가격 적용
+                price: price,
                 paymentDate: new Date(paymentDateStr).toISOString(),
                 paymentMethod,
                 cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
@@ -113,7 +103,7 @@ const App: React.FC = () => {
 
             return [...prev, newMembership];
         });
-    }, []);
+    }, [setMemberships]);
 
     const upgradeMembership = useCallback((originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
         setMemberships(prev => {
@@ -121,7 +111,6 @@ const App: React.FC = () => {
             if (!original) return prev;
 
             const newFullPrice = PASS_PRICES[newPassType];
-            // 차액 계산: 새 이용권 정가 - 기존 이용권 실 결제금액
             const upgradeCost = newFullPrice - original.price;
 
             if (upgradeCost < 0) {
@@ -132,45 +121,39 @@ const App: React.FC = () => {
             const today = new Date();
             const paymentDateStr = today.toISOString();
 
-            // 1. 기존 멤버십 만료 처리 (어제 날짜로 종료)
             const yesterday = new Date(today);
             yesterday.setDate(yesterday.getDate() - 1);
             
             const updatedOriginal = {
                 ...original,
                 endDate: yesterday.toISOString(),
-                // 가격 정보는 그대로 두어 과거 매출 기록 유지
             };
 
-            // 2. 새 멤버십 생성
-            // 시작일은 기존 멤버십의 시작일을 유지
             const originalStartDate = new Date(original.startDate);
-            // 종료일은 기존 시작일 기준으로 새 이용권 기간만큼 계산
             const newEndDate = calculateEndDate(originalStartDate, newPassType);
 
             const newMembership: Membership = {
                 id: crypto.randomUUID(),
                 studentId: original.studentId,
                 passType: newPassType,
-                startDate: original.startDate, // 중요: 시작일 유지
+                startDate: original.startDate,
                 endDate: newEndDate.toISOString(),
-                price: upgradeCost, // 매출은 차액만큼만 잡힘
+                price: upgradeCost,
                 paymentDate: paymentDateStr,
                 paymentMethod,
                 cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
             };
 
-            // 기존 리스트에서 원본을 업데이트된 것으로 교체하고, 새 멤버십 추가
             alert("이용권이 성공적으로 업그레이드 되었습니다.");
             return prev.map(m => m.id === originalMembershipId ? updatedOriginal : m).concat(newMembership);
         });
-    }, []);
+    }, [setMemberships]);
 
     const deleteStudent = useCallback((studentIdToDelete: string) => {
         setStudents(prevStudents => prevStudents.filter(student => student.id !== studentIdToDelete));
         setMemberships(prevMemberships => prevMemberships.filter(membership => membership.studentId !== studentIdToDelete));
         setAttendance(prevAttendance => prevAttendance.filter(record => record.studentId !== studentIdToDelete));
-    }, []);
+    }, [setStudents, setMemberships, setAttendance]);
     
     const updateStudentAndMembership = useCallback((
         studentId: string,
@@ -183,113 +166,289 @@ const App: React.FC = () => {
         setMemberships(prev => prev.map(m => {
             if (m.id !== membershipId) return m;
 
-            // Merge original data with new updates to get the full picture
             const newFullMembershipData = { ...m, ...updatedMembershipData };
 
-            // Check if endDate was explicitly provided (Manual Override)
             if (updatedMembershipData.endDate) {
-                 // Convert string YYYY-MM-DD to ISO if needed, though it might come as YYYY-MM-DD.
-                 // App expects ISO strings for dates in Membership.
-                 // updatedMembershipData.endDate comes from input type="date" (YYYY-MM-DD).
-                 // We should ensure it's ISO.
                  newFullMembershipData.endDate = new Date(updatedMembershipData.endDate).toISOString();
-                 
-                 // If manual date is set, we skip the automatic calculation logic completely for this update.
-                 // We also do not automatically apply holding extensions on top of a manual date,
-                 // assuming the user selected the final desired date.
             } else {
-                // Determine the correct start date and pass type for calculation
                 const startDate = new Date(newFullMembershipData.startDate);
                 const passType = newFullMembershipData.passType;
-
-                // Calculate the base end date from the start date and pass duration, ignoring any previous holds.
                 const baseEndDate = calculateEndDate(startDate, passType);
 
-                // Apply the new hold duration to the fresh base end date.
                 let finalEndDate = baseEndDate;
                 if (newFullMembershipData.holdStartDate && newFullMembershipData.holdEndDate) {
                     const holdStart = new Date(newFullMembershipData.holdStartDate);
                     const holdEnd = new Date(newFullMembershipData.holdEndDate);
                     if (holdEnd >= holdStart) {
-                        // +1 because hold period is inclusive (e.g., holding from Mon to Tue is 2 days)
                         const holdDuration = Math.ceil((holdEnd.getTime() - holdStart.getTime()) / (1000 * 3600 * 24)) + 1;
-                        // Create a new date object from baseEndDate to avoid mutation issues
                         finalEndDate = new Date(baseEndDate.getTime());
                         finalEndDate.setDate(baseEndDate.getDate() + holdDuration);
                     }
                 }
-
-                // Set the correctly calculated end date
                 newFullMembershipData.endDate = finalEndDate.toISOString();
             }
             
-            // If passType was changed, the price needs to be updated too.
-            // 주의: 수정 시에는 재등록 할인이 풀릴 수 있음 (정책 결정 필요). 현재는 정가로 리셋.
             if (updatedMembershipData.passType) {
                  newFullMembershipData.price = PASS_PRICES[newFullMembershipData.passType];
             }
 
-            // If payment method is card, cash receipt is always false.
             if (newFullMembershipData.paymentMethod === '카드') {
                 newFullMembershipData.cashReceiptIssued = false;
             }
 
             return newFullMembershipData;
         }));
-    }, []);
+    }, [setStudents, setMemberships]);
 
     const bulkExtendMemberships = useCallback((days: number, reason: string) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
     
-        const studentIdsToUpdate = new Set(
-            memberships
-                .filter(m => {
-                    const endDate = new Date(m.endDate);
-                    endDate.setHours(0, 0, 0, 0);
-                    const isHolding = m.holdStartDate && m.holdEndDate && today >= new Date(m.holdStartDate) && today <= new Date(m.holdEndDate);
-                    return endDate >= today && !isHolding;
+        // Calculate which students to update (need to access current state inside callback)
+        // Using functional update to ensure we have latest data
+        setMemberships(prevMemberships => {
+             const studentIdsToUpdate = new Set(
+                prevMemberships
+                    .filter(m => {
+                        const endDate = new Date(m.endDate);
+                        endDate.setHours(0, 0, 0, 0);
+                        const isHolding = m.holdStartDate && m.holdEndDate && today >= new Date(m.holdStartDate) && today <= new Date(m.holdEndDate);
+                        return endDate >= today && !isHolding;
+                    })
+                    .map(m => m.studentId)
+            );
+
+            if (studentIdsToUpdate.size === 0) {
+                alert(`연장할 활성 회원이 없습니다.`);
+                return prevMemberships;
+            }
+            
+            alert(`${studentIdsToUpdate.size}명의 활성 회원 이용권이 ${days}일 연장되었습니다.`);
+
+            // Update students remarks
+            setStudents(prevStudents =>
+                prevStudents.map(s => {
+                    if (studentIdsToUpdate.has(s.id)) {
+                        const extensionRemark = `[${new Date().toLocaleDateString('ko-KR')}] "${reason}" 사유로 ${days}일 연장.`;
+                        const newRemarks = s.remarks ? `${s.remarks}\n${extensionRemark}` : extensionRemark;
+                        return { ...s, remarks: newRemarks };
+                    }
+                    return s;
                 })
-                .map(m => m.studentId)
-        );
-    
-        if (studentIdsToUpdate.size === 0) {
-            alert(`연장할 활성 회원이 없습니다.`);
-            return;
-        }
-        
-        setMemberships(prevMemberships =>
-            prevMemberships.map(m => {
+            );
+
+            return prevMemberships.map(m => {
                 if (studentIdsToUpdate.has(m.studentId)) {
                     const newEndDate = new Date(m.endDate);
                     newEndDate.setDate(newEndDate.getDate() + days);
                     return { ...m, endDate: newEndDate.toISOString() };
                 }
                 return m;
-            })
-        );
-    
-        setStudents(prevStudents =>
-            prevStudents.map(s => {
-                if (studentIdsToUpdate.has(s.id)) {
-                    const extensionRemark = `[${new Date().toLocaleDateString('ko-KR')}] "${reason}" 사유로 ${days}일 연장.`;
-                    const newRemarks = s.remarks ? `${s.remarks}\n${extensionRemark}` : extensionRemark;
-                    return { ...s, remarks: newRemarks };
+            });
+        });
+    }, [setMemberships, setStudents]);
+
+    const importStudentsAndMemberships = useCallback((data: any[]) => {
+        let addedStudentsCount = 0;
+        let addedMembershipsCount = 0;
+
+        setStudents(prevStudents => {
+            const updatedStudents = [...prevStudents];
+            data.forEach(item => {
+                if (!item.student_id || !item.student_name) return;
+                const exists = updatedStudents.some(s => s.id === item.student_id);
+                if (!exists) {
+                    updatedStudents.push({
+                        id: item.student_id,
+                        name: item.student_name,
+                        phone: item.student_phone,
+                        registrationDate: item.student_registrationDate || new Date().toISOString(),
+                        remarks: item.student_remarks
+                    });
+                    addedStudentsCount++;
                 }
-                return s;
-            })
-        );
-        
-        alert(`${studentIdsToUpdate.size}명의 활성 회원 이용권이 ${days}일 연장되었습니다.`);
-    }, [memberships]);
+            });
+            return updatedStudents;
+        });
 
-    const importStudentsAndMemberships = (data: any[]) => {
-        let addedCount = 0;
-        let updatedCount = 0;
+        setMemberships(prevMemberships => {
+            const updatedMemberships = [...prevMemberships];
+            data.forEach(item => {
+                if (!item.membership_id) return;
+                 const exists = updatedMemberships.some(m => m.id === item.membership_id);
+                 if (!exists && item.membership_passType) {
+                     updatedMemberships.push({
+                         id: item.membership_id,
+                         studentId: item.student_id,
+                         passType: item.membership_passType,
+                         startDate: item.membership_startDate,
+                         endDate: item.membership_endDate,
+                         price: Number(item.membership_price),
+                         paymentDate: item.membership_paymentDate,
+                         paymentMethod: item.membership_paymentMethod,
+                         cashReceiptIssued: item.membership_cashReceiptIssued === 'true' || item.membership_cashReceiptIssued === true,
+                         holdStartDate: item.membership_holdStartDate || undefined,
+                         holdEndDate: item.membership_holdEndDate || undefined,
+                     });
+                     addedMembershipsCount++;
+                 }
+            });
+            return updatedMemberships;
+        });
+        alert(`데이터 가져오기 완료: 학생 ${addedStudentsCount}명, 이용권 ${addedMembershipsCount}개 추가됨.`);
+    }, [setStudents, setMemberships]);
 
-        const newStudents = [...students];
-        const newMemberships = [...memberships];
+    const importAttendance = useCallback((data: any[]) => {
+        setAttendance(prev => {
+            const newRecords = [...prev];
+            let count = 0;
+            data.forEach(item => {
+                const exists = newRecords.some(r => r.studentId === item.student_id && r.date === item.attendance_date && r.classTime === item.class_time);
+                if (!exists) {
+                    newRecords.push({
+                        id: crypto.randomUUID(),
+                        studentId: item.student_id,
+                        date: item.attendance_date,
+                        classTime: item.class_time
+                    });
+                    count++;
+                }
+            });
+            if(count > 0) alert(`${count}개의 출석 기록을 가져왔습니다.`);
+            else alert('새로운 출석 기록이 없습니다.');
+            return newRecords;
+        });
+   }, [setAttendance]);
 
-        data.forEach(item => {
-            const studentId = item.student_id;
-            if (!studentId || !item.student_name)
+    const toggleAttendance = useCallback((studentId: string, date: string, classTime: string) => {
+        setAttendance(prev => {
+            const exists = prev.find(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
+            if (exists) {
+                return prev.filter(a => a.id !== exists.id);
+            } else {
+                return [...prev, { id: crypto.randomUUID(), studentId, date, classTime }];
+            }
+        });
+    }, [setAttendance]);
+
+    const addOrUpdateSchedule = useCallback((classData: ClassSchedule) => {
+        setSchedule(prev => {
+            const exists = prev.some(c => c.id === classData.id);
+            if (exists) {
+                return prev.map(c => c.id === classData.id ? classData : c);
+            }
+            return [...prev, classData];
+        });
+    }, [setSchedule]);
+
+    const deleteSchedule = useCallback((classId: string) => {
+        setSchedule(prev => prev.filter(c => c.id !== classId));
+    }, [setSchedule]);
+
+    const addExpense = useCallback((expense: Omit<Expense, 'id'>) => {
+        setExpenses(prev => [...prev, { ...expense, id: crypto.randomUUID() }]);
+    }, [setExpenses]);
+
+    const deleteExpense = useCallback((expenseId: string) => {
+        setExpenses(prev => prev.filter(e => e.id !== expenseId));
+    }, [setExpenses]);
+
+    const renderContent = () => {
+        switch (view) {
+            case 'dashboard':
+                return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} schedule={schedule} />;
+            case 'students':
+                return <StudentManager 
+                    students={students} 
+                    memberships={memberships} 
+                    addStudent={addStudent} 
+                    addMembership={addMembership} 
+                    deleteStudent={deleteStudent}
+                    updateStudentAndMembership={updateStudentAndMembership}
+                    bulkExtendMemberships={bulkExtendMemberships}
+                    importStudentsAndMemberships={importStudentsAndMemberships}
+                    upgradeMembership={upgradeMembership}
+                />;
+            case 'schedule':
+                return <ScheduleManager 
+                    students={students} 
+                    memberships={memberships} 
+                    attendance={attendance} 
+                    toggleAttendance={toggleAttendance}
+                    schedule={schedule}
+                    addOrUpdateSchedule={addOrUpdateSchedule}
+                    deleteSchedule={deleteSchedule}
+                    importAttendance={importAttendance}
+                />;
+            case 'expenses':
+                return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} />;
+            case 'financials':
+                return <FinancialReport memberships={memberships} expenses={expenses} students={students} />;
+            default:
+                return <div>Unknown View</div>;
+        }
+    };
+
+    return (
+        <div className="flex h-screen bg-gray-100 font-sans">
+            {/* Sidebar */}
+            <div className="w-64 bg-white shadow-lg flex-shrink-0 flex flex-col">
+                <div className="p-6 border-b">
+                    <h1 className="text-2xl font-bold text-indigo-600 flex items-center gap-2">
+                        <span>🧘‍♀️</span> Yogao
+                    </h1>
+                    <p className="text-xs text-gray-500 mt-1">Studio Manager</p>
+                </div>
+                <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+                    <button
+                        onClick={() => setView('dashboard')}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'dashboard' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                        <DashboardIcon className="w-5 h-5" />
+                        <span>대시보드</span>
+                    </button>
+                    <button
+                        onClick={() => setView('students')}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'students' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                        <StudentsIcon className="w-5 h-5" />
+                        <span>회원 관리</span>
+                    </button>
+                    <button
+                        onClick={() => setView('schedule')}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'schedule' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                        <AttendanceIcon className="w-5 h-5" />
+                        <span>시간표 & 출결</span>
+                    </button>
+                    <button
+                        onClick={() => setView('expenses')}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'expenses' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                        <ExpenseIcon className="w-5 h-5" />
+                        <span>가계부 (지출)</span>
+                    </button>
+                    <button
+                        onClick={() => setView('financials')}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'financials' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                        <FinancialsIcon className="w-5 h-5" />
+                        <span>재무 리포트</span>
+                    </button>
+                </nav>
+                <div className="p-4 border-t text-xs text-center text-gray-400">
+                    &copy; 2024 Yogao Studio
+                </div>
+            </div>
+
+            {/* Main Content */}
+            <div className="flex-1 overflow-auto">
+                <div className="p-8 max-w-7xl mx-auto">
+                    {renderContent()}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default App;
