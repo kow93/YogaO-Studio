@@ -185,36 +185,47 @@ const App: React.FC = () => {
             // Merge original data with new updates to get the full picture
             const newFullMembershipData = { ...m, ...updatedMembershipData };
 
-            // Determine the correct start date and pass type for calculation
-            const startDate = new Date(newFullMembershipData.startDate);
-            const passType = newFullMembershipData.passType;
+            // Check if endDate was explicitly provided (Manual Override)
+            if (updatedMembershipData.endDate) {
+                 // Convert string YYYY-MM-DD to ISO if needed, though it might come as YYYY-MM-DD.
+                 // App expects ISO strings for dates in Membership.
+                 // updatedMembershipData.endDate comes from input type="date" (YYYY-MM-DD).
+                 // We should ensure it's ISO.
+                 newFullMembershipData.endDate = new Date(updatedMembershipData.endDate).toISOString();
+                 
+                 // If manual date is set, we skip the automatic calculation logic completely for this update.
+                 // We also do not automatically apply holding extensions on top of a manual date,
+                 // assuming the user selected the final desired date.
+            } else {
+                // Determine the correct start date and pass type for calculation
+                const startDate = new Date(newFullMembershipData.startDate);
+                const passType = newFullMembershipData.passType;
 
-            // Calculate the base end date from the start date and pass duration, ignoring any previous holds.
-            // Note: For edits, we stick to calculating from Start Date as we don't track which logic was used initially easily,
-            // or we assume user is manually adjusting if they are editing dates.
-            const baseEndDate = calculateEndDate(startDate, passType);
+                // Calculate the base end date from the start date and pass duration, ignoring any previous holds.
+                const baseEndDate = calculateEndDate(startDate, passType);
 
-            // Apply the new hold duration to the fresh base end date.
-            let finalEndDate = baseEndDate;
-            if (newFullMembershipData.holdStartDate && newFullMembershipData.holdEndDate) {
-                const holdStart = new Date(newFullMembershipData.holdStartDate);
-                const holdEnd = new Date(newFullMembershipData.holdEndDate);
-                if (holdEnd >= holdStart) {
-                    // +1 because hold period is inclusive (e.g., holding from Mon to Tue is 2 days)
-                    const holdDuration = Math.ceil((holdEnd.getTime() - holdStart.getTime()) / (1000 * 3600 * 24)) + 1;
-                    // Create a new date object from baseEndDate to avoid mutation issues
-                    finalEndDate = new Date(baseEndDate.getTime());
-                    finalEndDate.setDate(baseEndDate.getDate() + holdDuration);
+                // Apply the new hold duration to the fresh base end date.
+                let finalEndDate = baseEndDate;
+                if (newFullMembershipData.holdStartDate && newFullMembershipData.holdEndDate) {
+                    const holdStart = new Date(newFullMembershipData.holdStartDate);
+                    const holdEnd = new Date(newFullMembershipData.holdEndDate);
+                    if (holdEnd >= holdStart) {
+                        // +1 because hold period is inclusive (e.g., holding from Mon to Tue is 2 days)
+                        const holdDuration = Math.ceil((holdEnd.getTime() - holdStart.getTime()) / (1000 * 3600 * 24)) + 1;
+                        // Create a new date object from baseEndDate to avoid mutation issues
+                        finalEndDate = new Date(baseEndDate.getTime());
+                        finalEndDate.setDate(baseEndDate.getDate() + holdDuration);
+                    }
                 }
-            }
 
-            // Set the correctly calculated end date
-            newFullMembershipData.endDate = finalEndDate.toISOString();
+                // Set the correctly calculated end date
+                newFullMembershipData.endDate = finalEndDate.toISOString();
+            }
             
             // If passType was changed, the price needs to be updated too.
             // 주의: 수정 시에는 재등록 할인이 풀릴 수 있음 (정책 결정 필요). 현재는 정가로 리셋.
             if (updatedMembershipData.passType) {
-                 newFullMembershipData.price = PASS_PRICES[passType];
+                 newFullMembershipData.price = PASS_PRICES[newFullMembershipData.passType];
             }
 
             // If payment method is card, cash receipt is always false.

@@ -293,6 +293,7 @@ const StudentDetailModal: React.FC<{
     const [remarks, setRemarks] = useState(student.remarks || '');
     const [passType, setPassType] = useState(membership?.passType || PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(membership ? membership.startDate.split('T')[0] : '');
+    const [endDate, setEndDate] = useState(membership ? membership.endDate.split('T')[0] : '');
     const [paymentDate, setPaymentDate] = useState(membership ? (membership.paymentDate || membership.startDate).split('T')[0] : '');
     const [holdStart, setHoldStart] = useState('');
     const [holdEnd, setHoldEnd] = useState('');
@@ -316,6 +317,7 @@ const StudentDetailModal: React.FC<{
             if (passType !== membership.passType) membershipData.passType = passType;
             if (startDate !== membership.startDate.split('T')[0]) membershipData.startDate = startDate;
             if (paymentDate !== (membership.paymentDate || membership.startDate).split('T')[0]) membershipData.paymentDate = paymentDate;
+            if (endDate !== membership.endDate.split('T')[0]) membershipData.endDate = endDate;
             if (paymentMethod !== membership.paymentMethod) membershipData.paymentMethod = paymentMethod;
             if (cashReceiptIssued !== (membership.cashReceiptIssued || false)) membershipData.cashReceiptIssued = cashReceiptIssued;
             
@@ -433,14 +435,18 @@ const StudentDetailModal: React.FC<{
                                             ))}
                                         </select>
                                     </div>
+                                    <div>
+                                        <label htmlFor="edit-paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
+                                        <input type="date" id="edit-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                                    </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                        <div>
-                                            <label htmlFor="edit-paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
-                                            <input type="date" id="edit-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
-                                        </div>
                                         <div>
                                             <label htmlFor="edit-startDate" className="block text-sm font-medium text-gray-700">이용권 시작일</label>
                                             <input type="date" id="edit-startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="edit-endDate" className="block text-sm font-medium text-gray-700">이용권 만료일 (수동 설정)</label>
+                                            <input type="date" id="edit-endDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
                                         </div>
                                     </div>
                                     <div className="mt-4">
