@@ -77,34 +77,24 @@ const App: React.FC = () => {
 
     const addMembership = useCallback((studentId: string, passType: PassType, startDateStr: string, paymentDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
         setMemberships(prev => {
-            const studentMemberships = prev.filter(m => m.studentId === studentId);
-            const latestMembership = studentMemberships.sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
-            
             const startDate = new Date(startDateStr);
-            let endDate: Date;
-            const duration = PASS_DURATIONS[passType];
+            // 날짜 계산: 시작일을 기준으로 기간을 더하고 규칙에 따라 1일 또는 2일을 뺍니다.
+            const endDate = calculateEndDate(startDate, passType);
 
-            // Only apply the "relative to previous end date" logic for MONTH based passes.
-            // Day based passes (One Day, One Week) should strictly follow the start date duration.
-            if (latestMembership && duration.unit === 'month') {
-                // 추가 등록 로직: 이전 이용권의 종료일을 기준으로 계산
-                const prevEndDate = new Date(latestMembership.endDate);
-                const calculatedFromPrev = calculateEndDate(prevEndDate, passType);
-                
-                // 계산된 종료일이 시작일보다 미래인 경우에만 적용 (연속적인 등록인 경우)
-                // 공백기가 길어서 과거 날짜가 나오는 경우 방지
-                if (calculatedFromPrev > startDate) {
-                    endDate = calculatedFromPrev;
-                } else {
-                    endDate = calculateEndDate(startDate, passType);
-                }
-            } else {
-                endDate = calculateEndDate(startDate, passType);
-            }
+            // 이전 멤버십 확인 (할인 적용 여부 판단용)
+            const studentMemberships = prev.filter(m => m.studentId === studentId);
+            // 종료일 기준 내림차순 정렬하여 가장 최근 이용권 확인
+            const lastMembership = studentMemberships.sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
 
-            // 재등록 할인: 10,000원 차감 (원데이, 1주일권 제외)
             let price = PASS_PRICES[passType];
-            if (passType !== PassType.ONE_DAY && passType !== PassType.ONE_WEEK) {
+
+            // 할인 로직 수정:
+            // 1. 새로 등록하는 이용권이 원데이/1주일권이면 할인 제외 (PassType 확인)
+            // 2. 직전 이용권이 원데이/1주일권이면 할인 제외 (lastMembership 확인)
+            const isNewPassShortTerm = passType === PassType.ONE_DAY || passType === PassType.ONE_WEEK;
+            const isPrevPassShortTerm = lastMembership && (lastMembership.passType === PassType.ONE_DAY || lastMembership.passType === PassType.ONE_WEEK);
+
+            if (!isNewPassShortTerm && !isPrevPassShortTerm) {
                 price -= 10000;
             }
 
@@ -114,13 +104,64 @@ const App: React.FC = () => {
                 passType,
                 startDate: startDate.toISOString(),
                 endDate: endDate.toISOString(),
-                price: price, // 할인된 가격 적용
+                price: price, // 계산된 가격 적용
                 paymentDate: new Date(paymentDateStr).toISOString(),
                 paymentMethod,
                 cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
             };
 
             return [...prev, newMembership];
+        });
+    }, []);
+
+    const upgradeMembership = useCallback((originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
+        setMemberships(prev => {
+            const original = prev.find(m => m.id === originalMembershipId);
+            if (!original) return prev;
+
+            const newFullPrice = PASS_PRICES[newPassType];
+            // 차액 계산: 새 이용권 정가 - 기존 이용권 실 결제금액
+            const upgradeCost = newFullPrice - original.price;
+
+            if (upgradeCost < 0) {
+                alert("변경하려는 이용권의 가격이 현재 이용권보다 저렴합니다. 업그레이드는 더 높은 가격의 이용권으로만 가능합니다.");
+                return prev;
+            }
+
+            const today = new Date();
+            const paymentDateStr = today.toISOString();
+
+            // 1. 기존 멤버십 만료 처리 (어제 날짜로 종료)
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            const updatedOriginal = {
+                ...original,
+                endDate: yesterday.toISOString(),
+                // 가격 정보는 그대로 두어 과거 매출 기록 유지
+            };
+
+            // 2. 새 멤버십 생성
+            // 시작일은 기존 멤버십의 시작일을 유지
+            const originalStartDate = new Date(original.startDate);
+            // 종료일은 기존 시작일 기준으로 새 이용권 기간만큼 계산
+            const newEndDate = calculateEndDate(originalStartDate, newPassType);
+
+            const newMembership: Membership = {
+                id: crypto.randomUUID(),
+                studentId: original.studentId,
+                passType: newPassType,
+                startDate: original.startDate, // 중요: 시작일 유지
+                endDate: newEndDate.toISOString(),
+                price: upgradeCost, // 매출은 차액만큼만 잡힘
+                paymentDate: paymentDateStr,
+                paymentMethod,
+                cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
+            };
+
+            // 기존 리스트에서 원본을 업데이트된 것으로 교체하고, 새 멤버십 추가
+            alert("이용권이 성공적으로 업그레이드 되었습니다.");
+            return prev.map(m => m.id === originalMembershipId ? updatedOriginal : m).concat(newMembership);
         });
     }, []);
 
@@ -332,7 +373,7 @@ const App: React.FC = () => {
             case 'dashboard':
                 return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} schedule={schedule} />;
             case 'students':
-                return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} bulkExtendMemberships={bulkExtendMemberships} importStudentsAndMemberships={importStudentsAndMemberships} addMembership={addMembership} />;
+                return <StudentManager students={students} memberships={memberships} addStudent={addStudent} deleteStudent={deleteStudent} updateStudentAndMembership={updateStudentAndMembership} bulkExtendMemberships={bulkExtendMemberships} importStudentsAndMemberships={importStudentsAndMemberships} addMembership={addMembership} upgradeMembership={upgradeMembership} />;
             case 'schedule':
                 return <ScheduleManager students={students} memberships={memberships} attendance={attendance} toggleAttendance={toggleAttendance} schedule={schedule} addOrUpdateSchedule={addOrUpdateSchedule} deleteSchedule={deleteSchedule} />;
             case 'expenses':

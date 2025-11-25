@@ -1,12 +1,16 @@
+
 export enum PassType {
     ONE_DAY = '원데이 (1일)',
     ONE_WEEK = '1주일',
     MONTHLY_2_PER_WEEK = '주 2회 / 1개월',
     QUARTERLY_2_PER_WEEK = '주 2회 / 3개월',
+    HALF_YEARLY_2_PER_WEEK = '주 2회 / 6개월',
     MONTHLY_3_PER_WEEK = '주 3회 / 1개월',
     QUARTERLY_3_PER_WEEK = '주 3회 / 3개월',
+    HALF_YEARLY_3_PER_WEEK = '주 3회 / 6개월',
     MONTHLY_5_PER_WEEK = '주 5회 / 1개월',
     QUARTERLY_5_PER_WEEK = '주 5회 / 3개월',
+    HALF_YEARLY_5_PER_WEEK = '주 5회 / 6개월',
 }
 
 export interface Student {

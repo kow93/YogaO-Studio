@@ -6,10 +6,13 @@ export const PASS_OPTIONS: { label: PassType; value: PassType }[] = [
     { label: PassType.ONE_WEEK, value: PassType.ONE_WEEK },
     { label: PassType.MONTHLY_2_PER_WEEK, value: PassType.MONTHLY_2_PER_WEEK },
     { label: PassType.QUARTERLY_2_PER_WEEK, value: PassType.QUARTERLY_2_PER_WEEK },
+    { label: PassType.HALF_YEARLY_2_PER_WEEK, value: PassType.HALF_YEARLY_2_PER_WEEK },
     { label: PassType.MONTHLY_3_PER_WEEK, value: PassType.MONTHLY_3_PER_WEEK },
     { label: PassType.QUARTERLY_3_PER_WEEK, value: PassType.QUARTERLY_3_PER_WEEK },
+    { label: PassType.HALF_YEARLY_3_PER_WEEK, value: PassType.HALF_YEARLY_3_PER_WEEK },
     { label: PassType.MONTHLY_5_PER_WEEK, value: PassType.MONTHLY_5_PER_WEEK },
     { label: PassType.QUARTERLY_5_PER_WEEK, value: PassType.QUARTERLY_5_PER_WEEK },
+    { label: PassType.HALF_YEARLY_5_PER_WEEK, value: PassType.HALF_YEARLY_5_PER_WEEK },
 ];
 
 export const PASS_PRICES: Record<PassType, number> = {
@@ -17,10 +20,13 @@ export const PASS_PRICES: Record<PassType, number> = {
     [PassType.ONE_WEEK]: 50000,
     [PassType.MONTHLY_2_PER_WEEK]: 150000,
     [PassType.QUARTERLY_2_PER_WEEK]: 360000,
+    [PassType.HALF_YEARLY_2_PER_WEEK]: 650000,
     [PassType.MONTHLY_3_PER_WEEK]: 170000,
     [PassType.QUARTERLY_3_PER_WEEK]: 390000,
+    [PassType.HALF_YEARLY_3_PER_WEEK]: 700000,
     [PassType.MONTHLY_5_PER_WEEK]: 200000,
     [PassType.QUARTERLY_5_PER_WEEK]: 480000,
+    [PassType.HALF_YEARLY_5_PER_WEEK]: 850000,
 };
 
 export const PASS_DURATIONS: Record<PassType, { unit: 'day' | 'month'; value: number }> = {
@@ -28,10 +34,13 @@ export const PASS_DURATIONS: Record<PassType, { unit: 'day' | 'month'; value: nu
     [PassType.ONE_WEEK]: { unit: 'day', value: 7 },
     [PassType.MONTHLY_2_PER_WEEK]: { unit: 'month', value: 1 },
     [PassType.QUARTERLY_2_PER_WEEK]: { unit: 'month', value: 3 },
+    [PassType.HALF_YEARLY_2_PER_WEEK]: { unit: 'month', value: 6 },
     [PassType.MONTHLY_3_PER_WEEK]: { unit: 'month', value: 1 },
     [PassType.QUARTERLY_3_PER_WEEK]: { unit: 'month', value: 3 },
+    [PassType.HALF_YEARLY_3_PER_WEEK]: { unit: 'month', value: 6 },
     [PassType.MONTHLY_5_PER_WEEK]: { unit: 'month', value: 1 },
     [PassType.QUARTERLY_5_PER_WEEK]: { unit: 'month', value: 3 },
+    [PassType.HALF_YEARLY_5_PER_WEEK]: { unit: 'month', value: 6 },
 };
 
 export const CLASS_TIMES = ['10:10 - 11:10', '18:10 - 19:10', '19:40 - 20:40'];

@@ -18,6 +18,7 @@ interface StudentManagerProps {
     ) => void;
     bulkExtendMemberships: (days: number, reason: string) => void;
     importStudentsAndMemberships: (data: any[]) => void;
+    upgradeMembership: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
 }
 
 const AddStudentModal: React.FC<{
@@ -150,14 +151,21 @@ const ReregisterForm: React.FC<{
         onAddMembership(student.id, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued);
     };
 
+    // 직전 이용권이 원데이 또는 1주일권인지 확인
+    const isPrevShortTerm = latestMembership && (latestMembership.passType === PassType.ONE_DAY || latestMembership.passType === PassType.ONE_WEEK);
+
+    // 재등록 폼에서는 원데이, 1주일권을 선택지에서 제외
+    const availableOptions = PASS_OPTIONS.filter(option => option.value !== PassType.ONE_DAY && option.value !== PassType.ONE_WEEK);
+
     return (
         <form onSubmit={handleSubmit} className="space-y-4 bg-indigo-50 p-6 rounded-lg border border-indigo-200 mt-6">
             <h3 className="text-xl font-bold text-indigo-800">신규 이용권 등록 (재등록)</h3>
             <div>
                 <label htmlFor="rereg-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
                 <select id="rereg-passType" value={passType} onChange={e => setPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-                    {PASS_OPTIONS.map(option => {
-                        const isDiscountable = option.value !== PassType.ONE_DAY && option.value !== PassType.ONE_WEEK;
+                    {availableOptions.map(option => {
+                        // 직전 이용권이 체험권(원데이/1주일)이면 재등록 할인을 적용하지 않음
+                        const isDiscountable = !isPrevShortTerm;
                         const price = PASS_PRICES[option.value] - (isDiscountable ? 10000 : 0);
                         return (
                             <option key={option.value} value={option.value}>
@@ -166,7 +174,11 @@ const ReregisterForm: React.FC<{
                         );
                     })}
                 </select>
-                <p className="text-xs text-indigo-600 mt-1">* 재등록 시 10,000원 자동 할인이 적용됩니다. (원데이/1주일권 제외)</p>
+                <p className="text-xs text-indigo-600 mt-1">
+                    * {isPrevShortTerm 
+                        ? "원데이/1주일권 이용 회원은 정규 이용권 전환 시 재등록 할인이 적용되지 않습니다." 
+                        : "재등록 시 10,000원 자동 할인이 적용됩니다."}
+                </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -196,6 +208,71 @@ const ReregisterForm: React.FC<{
     );
 };
 
+const UpgradeForm: React.FC<{
+    currentMembership: Membership;
+    onUpgrade: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    onCancel: () => void;
+}> = ({ currentMembership, onUpgrade, onCancel }) => {
+    // 업그레이드는 현재 가격보다 비싼 것으로만 가능하게 필터링하거나, 차액 계산 로직을 보여줌
+    const [newPassType, setNewPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
+    const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
+    const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
+
+    const currentPrice = currentMembership.price;
+    const newPrice = PASS_PRICES[newPassType];
+    const diffPrice = newPrice - currentPrice;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onUpgrade(currentMembership.id, newPassType, paymentMethod, cashReceiptIssued);
+    };
+
+    return (
+         <form onSubmit={handleSubmit} className="space-y-4 bg-emerald-50 p-6 rounded-lg border border-emerald-200 mt-6">
+            <h3 className="text-xl font-bold text-emerald-800">이용권 업그레이드</h3>
+            <div className="p-3 bg-white rounded border border-emerald-100 mb-4">
+                 <p className="text-sm text-gray-600">현재 이용권: <span className="font-semibold">{currentMembership.passType}</span> ({currentPrice.toLocaleString()}원)</p>
+                 <p className="text-sm text-gray-600">기존 시작일: {new Date(currentMembership.startDate).toLocaleDateString('ko-KR')}</p>
+            </div>
+            
+            <div>
+                <label htmlFor="upgrade-passType" className="block text-sm font-medium text-gray-700">변경할 이용권 (업그레이드)</label>
+                <select id="upgrade-passType" value={newPassType} onChange={e => setNewPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-emerald-500 focus:border-emerald-500">
+                    {PASS_OPTIONS.map(option => {
+                        const optionPrice = PASS_PRICES[option.value];
+                        const diff = optionPrice - currentPrice;
+                        return (
+                            <option key={option.value} value={option.value} disabled={diff < 0}>
+                                {option.label} - {optionPrice.toLocaleString()}원 ({diff >= 0 ? `+${diff.toLocaleString()}원` : `${diff.toLocaleString()}원`})
+                            </option>
+                        );
+                    })}
+                </select>
+                {diffPrice < 0 && <p className="text-xs text-red-500 mt-1">현재 이용권보다 저렴한 이용권으로는 업그레이드할 수 없습니다.</p>}
+            </div>
+
+            <div className="text-right py-2">
+                 <p className="text-lg font-bold text-emerald-900">추가 결제 금액: {Math.max(0, diffPrice).toLocaleString()}원</p>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700">결제 방식</label>
+                <div className="mt-2 flex items-center space-x-4">
+                    <label className="flex items-center"><input type="radio" name="upgrade-paymentMethod" value="카드" checked={paymentMethod === '카드'} onChange={() => setPaymentMethod('카드')} className="focus:ring-emerald-500 h-4 w-4 text-emerald-600 border-gray-300" /><span className="ml-2">카드</span></label>
+                    <label className="flex items-center"><input type="radio" name="upgrade-paymentMethod" value="현금" checked={paymentMethod === '현금'} onChange={() => setPaymentMethod('현금')} className="focus:ring-emerald-500 h-4 w-4 text-emerald-600 border-gray-300" /><span className="ml-2">현금</span></label>
+                </div>
+            </div>
+            {paymentMethod === '현금' && (
+                <div className="pl-1"><label className="flex items-center"><input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)} className="h-4 w-4 rounded" /><span className="ml-2 text-sm font-medium">현금영수증 발행</span></label></div>
+            )}
+            <div className="flex justify-end pt-2">
+                <button type="button" onClick={onCancel} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md mr-2 hover:bg-gray-300">취소</button>
+                <button type="submit" disabled={diffPrice < 0} className={`ml-2 px-4 py-2 rounded-md text-white ${diffPrice < 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}>업그레이드 결제</button>
+            </div>
+        </form>
+    );
+};
+
 
 const StudentDetailModal: React.FC<{
     student: Student;
@@ -209,7 +286,8 @@ const StudentDetailModal: React.FC<{
         membershipData: Partial<Omit<Membership, 'id' | 'studentId'>>
     ) => void;
     onAddMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
-}> = ({ student, membership, allMemberships, onClose, onSave, onAddMembership }) => {
+    upgradeMembership: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+}> = ({ student, membership, allMemberships, onClose, onSave, onAddMembership, upgradeMembership }) => {
     const [name, setName] = useState(student.name);
     const [phone, setPhone] = useState(student.phone);
     const [remarks, setRemarks] = useState(student.remarks || '');
@@ -220,7 +298,9 @@ const StudentDetailModal: React.FC<{
     const [holdEnd, setHoldEnd] = useState('');
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>(membership?.paymentMethod || '카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(membership?.cashReceiptIssued || false);
-    const [isAddingNew, setIsAddingNew] = useState(false);
+    
+    // UI Mode State
+    const [mode, setMode] = useState<'view' | 'add' | 'upgrade'>('view');
 
     if (!student) return null;
 
@@ -245,8 +325,6 @@ const StudentDetailModal: React.FC<{
             }
             onSave(student.id, membership.id, studentData, membershipData);
         } else {
-            // This case should ideally not happen if we only allow editing when a membership exists.
-            // But as a fallback, we just save student data.
              onSave(student.id, '', studentData, {});
         }
         onClose();
@@ -256,6 +334,15 @@ const StudentDetailModal: React.FC<{
         onAddMembership(...args);
         onClose();
     };
+
+    const handleUpgrade = (...args: Parameters<typeof upgradeMembership>) => {
+        upgradeMembership(...args);
+        onClose();
+    };
+
+    // Check if membership is active for upgrade eligibility
+    // A membership is active if its end date is in the future or today.
+    const isMembershipActive = membership && new Date(membership.endDate) >= new Date(new Date().setHours(0,0,0,0));
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
@@ -285,24 +372,38 @@ const StudentDetailModal: React.FC<{
                     )}
                 </div>
 
-                {!isAddingNew && (
-                    <button onClick={() => setIsAddingNew(true)} className="w-full text-center bg-indigo-600 text-white px-4 py-3 rounded-md hover:bg-indigo-700 font-semibold mb-6">
-                        + 신규 이용권 추가 (재등록)
-                    </button>
+                {/* Button Group for Actions */}
+                {mode === 'view' && (
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <button onClick={() => setMode('add')} className="bg-indigo-600 text-white px-4 py-3 rounded-md hover:bg-indigo-700 font-semibold">
+                            + 신규 이용권 추가 (재등록)
+                        </button>
+                        {isMembershipActive && membership && (
+                            <button onClick={() => setMode('upgrade')} className="bg-emerald-600 text-white px-4 py-3 rounded-md hover:bg-emerald-700 font-semibold">
+                                ↑ 이용권 업그레이드
+                            </button>
+                        )}
+                    </div>
                 )}
 
-                {isAddingNew ? (
+                {/* Render Forms based on mode */}
+                {mode === 'add' ? (
                      <ReregisterForm 
                         student={student} 
                         latestMembership={membership} 
                         onAddMembership={handleAddMembership} 
-                        onCancel={() => setIsAddingNew(false)}
+                        onCancel={() => setMode('view')}
                      />
+                ) : mode === 'upgrade' && membership ? (
+                    <UpgradeForm
+                        currentMembership={membership}
+                        onUpgrade={handleUpgrade}
+                        onCancel={() => setMode('view')}
+                    />
                 ) : (
                     <form onSubmit={handleSave} className="space-y-6">
                         <div className="p-4 border rounded-md">
                             <h3 className="text-lg font-semibold mb-2 text-gray-700">기본 정보 수정</h3>
-                            {/* ... student info fields ... */}
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                  <div>
                                     <label htmlFor="edit-name" className="block text-sm font-medium text-gray-700">이름</label>
@@ -492,7 +593,7 @@ function parseCsvLine(line: string): string[] {
 }
 
 
-export const StudentManager: React.FC<StudentManagerProps> = ({ students, memberships, addStudent, addMembership, deleteStudent, updateStudentAndMembership, bulkExtendMemberships, importStudentsAndMemberships }) => {
+export const StudentManager: React.FC<StudentManagerProps> = ({ students, memberships, addStudent, addMembership, deleteStudent, updateStudentAndMembership, bulkExtendMemberships, importStudentsAndMemberships, upgradeMembership }) => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isBulkExtendModalOpen, setIsBulkExtendModalOpen] = useState(false);
     const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -847,6 +948,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                     onClose={() => setSelectedStudentId(null)}
                     onSave={updateStudentAndMembership}
                     onAddMembership={addMembership}
+                    upgradeMembership={upgradeMembership}
                 />
             )}
 
