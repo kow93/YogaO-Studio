@@ -72,7 +72,15 @@ const App: React.FC = () => {
         setMemberships(prev => [...prev, newMembership]);
     }, [setStudents, setMemberships]);
 
-    const addMembership = useCallback((studentId: string, passType: PassType, startDateStr: string, paymentDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
+    const addMembership = useCallback((
+        studentId: string, 
+        passType: PassType, 
+        startDateStr: string, 
+        paymentDateStr: string, 
+        paymentMethod: '카드' | '현금', 
+        cashReceiptIssued: boolean,
+        customPrice?: number
+    ) => {
         setMemberships(prev => {
             const startDate = new Date(startDateStr);
             const endDate = calculateEndDate(startDate, passType);
@@ -80,13 +88,16 @@ const App: React.FC = () => {
             const studentMemberships = prev.filter(m => m.studentId === studentId);
             const lastMembership = studentMemberships.sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
 
-            let price = PASS_PRICES[passType];
+            let price = customPrice !== undefined ? customPrice : PASS_PRICES[passType];
 
-            const isNewPassShortTerm = passType === PassType.ONE_DAY || passType === PassType.ONE_WEEK;
-            const isPrevPassShortTerm = lastMembership && (lastMembership.passType === PassType.ONE_DAY || lastMembership.passType === PassType.ONE_WEEK);
+            // Apply discount logic ONLY if customPrice is NOT provided
+            if (customPrice === undefined) {
+                const isNewPassShortTerm = passType === PassType.ONE_DAY || passType === PassType.ONE_WEEK;
+                const isPrevPassShortTerm = lastMembership && (lastMembership.passType === PassType.ONE_DAY || lastMembership.passType === PassType.ONE_WEEK);
 
-            if (!isNewPassShortTerm && !isPrevPassShortTerm) {
-                price -= 10000;
+                if (!isNewPassShortTerm && !isPrevPassShortTerm) {
+                    price -= 10000;
+                }
             }
 
             const newMembership: Membership = {

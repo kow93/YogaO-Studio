@@ -350,26 +350,31 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
         targetDate.setHours(0, 0, 0, 0);
 
         return students.filter(student => {
-            const membership = memberships.find(m => m.studentId === student.id);
-            if (!membership) return false;
+            // Find ALL memberships for this student, not just the first one
+            const studentMemberships = memberships.filter(m => m.studentId === student.id);
+            if (studentMemberships.length === 0) return false;
             
-            // Normalize membership start/end dates to midnight
-            const startDate = new Date(membership.startDate);
-            startDate.setHours(0, 0, 0, 0);
-            
-            const endDate = new Date(membership.endDate);
-            endDate.setHours(0, 0, 0, 0);
+            // Check if ANY of the student's memberships are active for the target date
+            return studentMemberships.some(membership => {
+                // Normalize membership start/end dates to midnight
+                const startDate = new Date(membership.startDate);
+                startDate.setHours(0, 0, 0, 0);
+                
+                const endDate = new Date(membership.endDate);
+                endDate.setHours(0, 0, 0, 0);
 
-            if (membership.holdStartDate && membership.holdEndDate) {
-                const holdStart = new Date(membership.holdStartDate);
-                holdStart.setHours(0, 0, 0, 0);
-                const holdEnd = new Date(membership.holdEndDate);
-                holdEnd.setHours(0, 0, 0, 0);
-                if (targetDate >= holdStart && targetDate <= holdEnd) return false;
-            }
+                if (membership.holdStartDate && membership.holdEndDate) {
+                    const holdStart = new Date(membership.holdStartDate);
+                    holdStart.setHours(0, 0, 0, 0);
+                    const holdEnd = new Date(membership.holdEndDate);
+                    holdEnd.setHours(0, 0, 0, 0);
+                    // If currently in holding period, consider inactive
+                    if (targetDate >= holdStart && targetDate <= holdEnd) return false;
+                }
 
-            // Compare dates only
-            return targetDate >= startDate && targetDate <= endDate;
+                // Check date range
+                return targetDate >= startDate && targetDate <= endDate;
+            });
         }).filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
           .sort((a, b) => a.name.localeCompare(b.name));
     }, [students, memberships, date, searchTerm]);

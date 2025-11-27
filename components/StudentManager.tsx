@@ -8,7 +8,7 @@ interface StudentManagerProps {
     students: Student[];
     memberships: Membership[];
     addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
-    addMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    addMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, customPrice?: number) => void;
     deleteStudent: (studentId: string) => void;
     updateStudentAndMembership: (
         studentId: string,
@@ -208,6 +208,77 @@ const ReregisterForm: React.FC<{
     );
 };
 
+const PastMembershipForm: React.FC<{
+    student: Student;
+    onAddMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, customPrice: number) => void;
+    onCancel: () => void;
+}> = ({ student, onAddMembership, onCancel }) => {
+    const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
+    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+    const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
+    const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
+    const [customPrice, setCustomPrice] = useState<string>(String(PASS_PRICES[PassType.MONTHLY_3_PER_WEEK]));
+
+    const handlePassChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newType = e.target.value as PassType;
+        setPassType(newType);
+        setCustomPrice(String(PASS_PRICES[newType]));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onAddMembership(student.id, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued, Number(customPrice));
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4 bg-gray-100 p-6 rounded-lg border border-gray-300 mt-6">
+            <h3 className="text-xl font-bold text-gray-800">과거 이용권 기록 추가</h3>
+            <p className="text-sm text-gray-600 mb-2">예전 기록을 남기기 위한 기능입니다. 가격과 날짜를 자유롭게 설정할 수 있습니다.</p>
+            
+            <div>
+                <label htmlFor="past-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
+                <select id="past-passType" value={passType} onChange={handlePassChange} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
+                    {PASS_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                </select>
+            </div>
+            
+            <div>
+                <label htmlFor="past-price" className="block text-sm font-medium text-gray-700">결제 금액 (직접 입력)</label>
+                <input type="number" id="past-price" value={customPrice} onChange={e => setCustomPrice(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label htmlFor="past-paymentDate" className="block text-sm font-medium text-gray-700">결제일 (과거)</label>
+                    <input type="date" id="past-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                </div>
+                <div>
+                    <label htmlFor="past-startDate" className="block text-sm font-medium text-gray-700">시작일 (과거)</label>
+                    <input type="date" id="past-startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                </div>
+            </div>
+             <div>
+                <label className="block text-sm font-medium text-gray-700">결제 방식</label>
+                <div className="mt-2 flex items-center space-x-4">
+                    <label className="flex items-center"><input type="radio" name="past-paymentMethod" value="카드" checked={paymentMethod === '카드'} onChange={() => setPaymentMethod('카드')} className="h-4 w-4 text-gray-600 border-gray-300" /><span className="ml-2">카드</span></label>
+                    <label className="flex items-center"><input type="radio" name="past-paymentMethod" value="현금" checked={paymentMethod === '현금'} onChange={() => setPaymentMethod('현금')} className="h-4 w-4 text-gray-600 border-gray-300" /><span className="ml-2">현금</span></label>
+                </div>
+            </div>
+             {paymentMethod === '현금' && (
+                <div className="pl-1"><label className="flex items-center"><input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)} className="h-4 w-4 rounded" /><span className="ml-2 text-sm font-medium">현금영수증 발행 여부</span></label></div>
+            )}
+
+            <div className="flex justify-end pt-2">
+                <button type="button" onClick={onCancel} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md mr-2 hover:bg-gray-300">취소</button>
+                <button type="submit" className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700">과거 기록 저장</button>
+            </div>
+        </form>
+    );
+};
+
 const UpgradeForm: React.FC<{
     currentMembership: Membership;
     onUpgrade: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
@@ -285,7 +356,7 @@ const StudentDetailModal: React.FC<{
         studentData: Partial<Omit<Student, 'id'>>,
         membershipData: Partial<Omit<Membership, 'id' | 'studentId'>>
     ) => void;
-    onAddMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    onAddMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, customPrice?: number) => void;
     upgradeMembership: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
 }> = ({ student, membership, allMemberships, onClose, onSave, onAddMembership, upgradeMembership }) => {
     const [name, setName] = useState(student.name);
@@ -301,7 +372,7 @@ const StudentDetailModal: React.FC<{
     const [cashReceiptIssued, setCashReceiptIssued] = useState(membership?.cashReceiptIssued || false);
     
     // UI Mode State
-    const [mode, setMode] = useState<'view' | 'add' | 'upgrade'>('view');
+    const [mode, setMode] = useState<'view' | 'add' | 'upgrade' | 'past'>('view');
 
     if (!student) return null;
 
@@ -342,6 +413,26 @@ const StudentDetailModal: React.FC<{
         onClose();
     };
 
+    const getStatusBadge = (m: Membership) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const start = new Date(m.startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(m.endDate);
+        end.setHours(0, 0, 0, 0);
+
+        if (start > today) return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-yellow-100 text-yellow-800 border border-yellow-200">예정</span>;
+        
+        if (m.holdStartDate && m.holdEndDate) {
+             const hStart = new Date(m.holdStartDate);
+             const hEnd = new Date(m.holdEndDate);
+             if (today >= hStart && today <= hEnd) return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-800 border border-blue-200">홀딩중</span>;
+        }
+
+        if (end < today) return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-gray-200 text-gray-500 border border-gray-300">만료</span>;
+        return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-green-100 text-green-800 border border-green-200">사용중</span>;
+    };
+
     // Check if membership is active for upgrade eligibility
     // A membership is active if its end date is in the future or today.
     const isMembershipActive = membership && new Date(membership.endDate) >= new Date(new Date().setHours(0,0,0,0));
@@ -361,11 +452,14 @@ const StudentDetailModal: React.FC<{
                     {allMemberships.length > 0 ? (
                         <ul className="space-y-2 max-h-40 overflow-y-auto pr-2">
                             {allMemberships.map(m => (
-                                <li key={m.id} className={`p-2 rounded-md text-sm ${m.id === membership?.id ? 'bg-indigo-100 border border-indigo-300' : 'bg-gray-100'}`}>
-                                    <div className="font-semibold">{m.passType}</div>
-                                    <div className="text-gray-600">기간: {new Date(m.startDate).toLocaleDateString('ko-KR')} ~ {new Date(m.endDate).toLocaleDateString('ko-KR')}</div>
+                                <li key={m.id} className={`p-2 rounded-md text-sm ${m.id === membership?.id ? 'bg-indigo-50 border border-indigo-200 ring-1 ring-indigo-300' : 'bg-gray-50 border border-gray-200'}`}>
+                                    <div className="font-semibold flex items-center">
+                                        {m.passType}
+                                        {getStatusBadge(m)}
+                                    </div>
+                                    <div className="text-gray-600 mt-1">기간: {new Date(m.startDate).toLocaleDateString('ko-KR')} ~ {new Date(m.endDate).toLocaleDateString('ko-KR')}</div>
                                     <div className="text-gray-600">금액: {m.price ? m.price.toLocaleString() + '원' : '-'}</div>
-                                    {m.holdStartDate && <div className="text-blue-600">홀딩: {new Date(m.holdStartDate).toLocaleDateString('ko-KR')} ~ {m.holdEndDate ? new Date(m.holdEndDate).toLocaleDateString('ko-KR') : ''}</div>}
+                                    {m.holdStartDate && <div className="text-blue-600 text-xs mt-0.5">홀딩: {new Date(m.holdStartDate).toLocaleDateString('ko-KR')} ~ {m.holdEndDate ? new Date(m.holdEndDate).toLocaleDateString('ko-KR') : ''}</div>}
                                 </li>
                             ))}
                         </ul>
@@ -376,15 +470,22 @@ const StudentDetailModal: React.FC<{
 
                 {/* Button Group for Actions */}
                 {mode === 'view' && (
-                    <div className="grid grid-cols-2 gap-4 mb-6">
-                        <button onClick={() => setMode('add')} className="bg-indigo-600 text-white px-4 py-3 rounded-md hover:bg-indigo-700 font-semibold">
-                            + 신규 이용권 추가 (재등록)
-                        </button>
-                        {isMembershipActive && membership && (
-                            <button onClick={() => setMode('upgrade')} className="bg-emerald-600 text-white px-4 py-3 rounded-md hover:bg-emerald-700 font-semibold">
-                                ↑ 이용권 업그레이드
+                    <div className="space-y-3 mb-6">
+                        <div className="grid grid-cols-2 gap-4">
+                            <button onClick={() => setMode('add')} className="bg-indigo-600 text-white px-4 py-3 rounded-md hover:bg-indigo-700 font-semibold">
+                                + 신규 이용권 추가 (재등록)
                             </button>
-                        )}
+                            {isMembershipActive && membership && (
+                                <button onClick={() => setMode('upgrade')} className="bg-emerald-600 text-white px-4 py-3 rounded-md hover:bg-emerald-700 font-semibold">
+                                    ↑ 이용권 업그레이드
+                                </button>
+                            )}
+                        </div>
+                        <div className="text-right">
+                             <button onClick={() => setMode('past')} className="text-sm text-gray-500 underline hover:text-gray-700">
+                                + 과거 이용권 기록 수동 추가
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -400,6 +501,12 @@ const StudentDetailModal: React.FC<{
                     <UpgradeForm
                         currentMembership={membership}
                         onUpgrade={handleUpgrade}
+                        onCancel={() => setMode('view')}
+                    />
+                ) : mode === 'past' ? (
+                    <PastMembershipForm
+                        student={student}
+                        onAddMembership={handleAddMembership}
                         onCancel={() => setMode('view')}
                     />
                 ) : (
