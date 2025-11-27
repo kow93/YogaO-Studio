@@ -345,19 +345,31 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
     const classTimeString = `${classItem.startTime} - ${classItem.className}`;
 
     const activeStudents = useMemo(() => {
+        // Normalize the class date to midnight (00:00:00) to ignore time parts
+        const targetDate = new Date(date);
+        targetDate.setHours(0, 0, 0, 0);
+
         return students.filter(student => {
             const membership = memberships.find(m => m.studentId === student.id);
             if (!membership) return false;
             
+            // Normalize membership start/end dates to midnight
+            const startDate = new Date(membership.startDate);
+            startDate.setHours(0, 0, 0, 0);
+            
+            const endDate = new Date(membership.endDate);
+            endDate.setHours(0, 0, 0, 0);
+
             if (membership.holdStartDate && membership.holdEndDate) {
                 const holdStart = new Date(membership.holdStartDate);
+                holdStart.setHours(0, 0, 0, 0);
                 const holdEnd = new Date(membership.holdEndDate);
-                if (date >= holdStart && date <= holdEnd) return false;
+                holdEnd.setHours(0, 0, 0, 0);
+                if (targetDate >= holdStart && targetDate <= holdEnd) return false;
             }
 
-            const startDate = new Date(membership.startDate);
-            const endDate = new Date(membership.endDate);
-            return date >= startDate && date <= endDate;
+            // Compare dates only
+            return targetDate >= startDate && targetDate <= endDate;
         }).filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
           .sort((a, b) => a.name.localeCompare(b.name));
     }, [students, memberships, date, searchTerm]);
