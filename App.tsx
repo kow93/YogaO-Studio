@@ -330,6 +330,36 @@ const App: React.FC = () => {
             return newRecords;
         });
    }, [setAttendance]);
+   
+   const importExpenses = useCallback((data: any[]) => {
+        let count = 0;
+        setExpenses(prev => {
+            const newExpenses = [...prev];
+            data.forEach(item => {
+                // Duplicate check based on exact match of fields since ID might be new
+                const exists = newExpenses.some(e => 
+                    e.date === item.date && 
+                    e.category === item.category && 
+                    e.description === item.description && 
+                    e.amount === Number(item.amount)
+                );
+                
+                if (!exists) {
+                     newExpenses.push({
+                        id: crypto.randomUUID(),
+                        date: item.date,
+                        category: item.category,
+                        description: item.description,
+                        amount: Number(item.amount)
+                    });
+                    count++;
+                }
+            });
+            if(count > 0) alert(`${count}개의 지출 내역을 가져왔습니다.`);
+            else alert('새로운 지출 내역이 없습니다.');
+            return newExpenses;
+        });
+   }, [setExpenses]);
 
     const toggleAttendance = useCallback((studentId: string, date: string, classTime: string) => {
         setAttendance(prev => {
@@ -392,7 +422,7 @@ const App: React.FC = () => {
                     importAttendance={importAttendance}
                 />;
             case 'expenses':
-                return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} />;
+                return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} importExpenses={importExpenses} />;
             case 'financials':
                 return <FinancialReport memberships={memberships} expenses={expenses} students={students} />;
             default:
