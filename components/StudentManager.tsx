@@ -425,7 +425,9 @@ const StudentDetailModal: React.FC<{
         
         if (m.holdStartDate && m.holdEndDate) {
              const hStart = new Date(m.holdStartDate);
+             hStart.setHours(0, 0, 0, 0);
              const hEnd = new Date(m.holdEndDate);
+             hEnd.setHours(0, 0, 0, 0);
              if (today >= hStart && today <= hEnd) return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-800 border border-blue-200">홀딩중</span>;
         }
 
@@ -728,7 +730,10 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
 
         if (membership.holdStartDate && membership.holdEndDate) {
             const holdStart = new Date(membership.holdStartDate);
+            holdStart.setHours(0, 0, 0, 0);
             const holdEnd = new Date(membership.holdEndDate);
+            holdEnd.setHours(0, 0, 0, 0);
+            
             if (today >= holdStart && today <= holdEnd) {
                 return { text: '홀딩중', color: 'bg-blue-200 text-blue-800' };
             }
@@ -758,7 +763,9 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                 // 1. Find a membership that is currently active.
                 const currentMembership = studentMemberships.find(m => {
                     const startDate = new Date(m.startDate);
+                    startDate.setHours(0, 0, 0, 0);
                     const endDate = new Date(m.endDate);
+                    endDate.setHours(0, 0, 0, 0);
                     return startDate <= today && endDate >= today;
                 });
 
@@ -769,7 +776,11 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                 } else {
                     // 2. If no current, find the one that starts soonest in the future.
                     const future = studentMemberships
-                        .filter(m => new Date(m.startDate) > today)
+                        .filter(m => {
+                             const d = new Date(m.startDate);
+                             d.setHours(0,0,0,0);
+                             return d > today;
+                        })
                         .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
 
                     if (future.length > 0) {
@@ -777,7 +788,11 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                     } else {
                         // 3. If no current or future, find the one that expired most recently.
                         const past = studentMemberships
-                            .filter(m => new Date(m.endDate) < today)
+                            .filter(m => {
+                                const d = new Date(m.endDate);
+                                d.setHours(0,0,0,0);
+                                return d < today;
+                            })
                             .sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime());
 
                         if (past.length > 0) {
@@ -791,7 +806,11 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
 
                 // Calculate combined end date from all non-expired memberships
                 let combinedEndDate: string | undefined;
-                const nonExpiredMemberships = studentMemberships.filter(m => new Date(m.endDate) >= today);
+                const nonExpiredMemberships = studentMemberships.filter(m => {
+                    const d = new Date(m.endDate);
+                    d.setHours(0,0,0,0);
+                    return d >= today;
+                });
 
                 if (nonExpiredMemberships.length > 0) {
                     const latestEndDate = nonExpiredMemberships.reduce((latest, current) => {

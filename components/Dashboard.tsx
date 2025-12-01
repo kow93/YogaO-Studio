@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Student, Membership, Expense, AttendanceRecord, ClassSchedule } from '../types';
@@ -25,14 +26,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
 
     const activeMemberships = memberships.filter(m => {
         const endDate = new Date(m.endDate);
-        const isHolding = m.holdStartDate && m.holdEndDate && today >= new Date(m.holdStartDate) && today <= new Date(m.holdEndDate);
+        endDate.setHours(0, 0, 0, 0);
+        let isHolding = false;
+        if (m.holdStartDate && m.holdEndDate) {
+            const holdStart = new Date(m.holdStartDate);
+            holdStart.setHours(0, 0, 0, 0);
+            const holdEnd = new Date(m.holdEndDate);
+            holdEnd.setHours(0, 0, 0, 0);
+            isHolding = today >= holdStart && today <= holdEnd;
+        }
         return endDate >= today && !isHolding;
     });
 
     const holdingMembersCount = memberships.filter(m => {
         if (!m.holdStartDate || !m.holdEndDate) return false;
         const holdStart = new Date(m.holdStartDate);
+        holdStart.setHours(0, 0, 0, 0);
         const holdEnd = new Date(m.holdEndDate);
+        holdEnd.setHours(0, 0, 0, 0);
         return today >= holdStart && today <= holdEnd;
     }).length;
 
@@ -79,7 +90,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
         if (endDate < today) return false;
         if (m.holdStartDate && m.holdEndDate) {
              const holdStart = new Date(m.holdStartDate);
+             holdStart.setHours(0, 0, 0, 0);
              const holdEnd = new Date(m.holdEndDate);
+             holdEnd.setHours(0, 0, 0, 0);
              if (today >= holdStart && today <= holdEnd) return false;
         }
 
