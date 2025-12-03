@@ -379,6 +379,40 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
           .sort((a, b) => a.name.localeCompare(b.name));
     }, [students, memberships, date, searchTerm]);
     
+    const getEndDateString = (studentId: string) => {
+        const targetDate = new Date(date);
+        targetDate.setHours(0, 0, 0, 0);
+
+        const studentMemberships = memberships.filter(m => m.studentId === studentId);
+        
+        const activeMembership = studentMemberships.find(membership => {
+            const startDate = new Date(membership.startDate);
+            startDate.setHours(0, 0, 0, 0);
+            
+            const endDate = new Date(membership.endDate);
+            endDate.setHours(0, 0, 0, 0);
+
+            if (membership.holdStartDate && membership.holdEndDate) {
+                const holdStart = new Date(membership.holdStartDate);
+                holdStart.setHours(0, 0, 0, 0);
+                const holdEnd = new Date(membership.holdEndDate);
+                holdEnd.setHours(0, 0, 0, 0);
+                if (targetDate >= holdStart && targetDate <= holdEnd) return false;
+            }
+
+            return targetDate >= startDate && targetDate <= endDate;
+        });
+
+        if (activeMembership) {
+            const endDate = new Date(activeMembership.endDate);
+            const mm = String(endDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(endDate.getDate()).padStart(2, '0');
+            const yyyy = endDate.getFullYear();
+            return `${mm}/${dd}/${yyyy}`;
+        }
+        return null;
+    };
+
     const isAttended = (studentId: string) => attendance.some(a => a.studentId === studentId && a.date === dateString && a.classTime === classTimeString);
 
     if (!isOpen) return null;
@@ -398,7 +432,13 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
                     {activeStudents.map(student => (
                         <li key={student.id} className="py-3 px-2 flex justify-between items-center hover:bg-gray-50 rounded">
                             <div>
-                                <p className="font-medium text-gray-900">{student.name}</p>
+                                <div className="flex items-center gap-2">
+                                    <p className="font-medium text-gray-900">{student.name}</p>
+                                    {(() => {
+                                        const dateStr = getEndDateString(student.id);
+                                        return dateStr ? <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">만료일: {dateStr}</span> : null;
+                                    })()}
+                                </div>
                                 <p className="text-sm text-gray-500">{student.phone}</p>
                             </div>
                              <input type="checkbox" checked={isAttended(student.id)} onChange={() => toggleAttendance(student.id, dateString, classTimeString)} className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"/>
