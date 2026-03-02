@@ -27,6 +27,18 @@
 }
 </script>
 <link rel="stylesheet" href="/index.css">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+  // 사장님의 Supabase 설정 정보 (Project Settings -> API에서 확인 가능) [cite: 2026-01-17]
+  const SUPABASE_URL = 'https://pycrqmlccjvgnfiygktm.supabase.co'; // 여기를 사장님 URL로 교체 [cite: 2026-01-17]
+  const SUPABASE_ANON_KEY = 'sb_publishable_qpYIuBzSZWlwhQcIbiF_rw_fTQq4iI1'; // 여기를 사장님 Anon Key로 교체 [cite: 2026-01-17]
+
+  // 전역 객체로 설정하여 App.tsx에서 사용할 수 있게 함 [cite: 2026-01-17]
+  window._supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+</script>
+
 </head>
   <body>
     <div id="root"></div>
