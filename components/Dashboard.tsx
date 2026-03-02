@@ -24,19 +24,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const activeMemberships = memberships.filter(m => {
-        const endDate = new Date(m.endDate);
-        endDate.setHours(0, 0, 0, 0);
-        let isHolding = false;
-        if (m.holdStartDate && m.holdEndDate) {
-            const holdStart = new Date(m.holdStartDate);
-            holdStart.setHours(0, 0, 0, 0);
-            const holdEnd = new Date(m.holdEndDate);
-            holdEnd.setHours(0, 0, 0, 0);
-            isHolding = today >= holdStart && today <= holdEnd;
-        }
-        return endDate >= today && !isHolding;
-    });
+    const validMembersCount = students.filter(student => {
+        const studentMemberships = memberships.filter(m => m.studentId === student.id);
+        return studentMemberships.some(m => {
+            const endDate = new Date(m.endDate);
+            endDate.setHours(0, 0, 0, 0);
+            return endDate >= today;
+        });
+    }).length;
 
     const holdingMembersCount = memberships.filter(m => {
         if (!m.holdStartDate || !m.holdEndDate) return false;
@@ -167,15 +162,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
 
     return (
         <div className="space-y-8">
-            <h1 className="text-3xl font-bold text-gray-800">대시보드</h1>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <StatCard title="총 회원 수" value={students.length} description="지금까지 등록한 총 회원 수입니다." />
-                <StatCard title="활성 회원 수" value={activeMemberships.length} description="현재 이용권이 유효한 회원입니다." />
+            <div className="flex justify-between items-end">
+                <h1 className="text-3xl font-bold text-gray-800">대시보드</h1>
+                <p className="text-sm text-gray-500">기준일: {today.toLocaleDateString('ko-KR')}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-indigo-600 p-6 rounded-xl shadow-lg text-white col-span-1 md:col-span-2 flex flex-col justify-between">
+                    <div>
+                        <h3 className="text-indigo-100 text-sm font-medium">유효 회원 현황</h3>
+                        <div className="mt-4 flex items-baseline gap-4">
+                            <p className="text-5xl font-bold">{validMembersCount}</p>
+                            <p className="text-indigo-200">/ 전체 {students.length}명</p>
+                        </div>
+                    </div>
+                    <p className="mt-4 text-xs text-indigo-200">현재 이용권이 만료되지 않은 유효 회원 수입니다.</p>
+                </div>
                 <StatCard title="홀딩 회원 수" value={holdingMembersCount} description="현재 이용권을 홀딩 중인 회원입니다." />
+                <StatCard title="총 매출" value={formatCurrency(totalRevenue)} description="누적된 전체 매출입니다." />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
                 <StatCard title="이번 달 신규 회원" value={`${newMembersThisMonthCount}명`} description="이번 달에 처음 등록한 회원입니다." />
                 <StatCard title="이번 달 재등록" value={`${reregisteredMembersThisMonthCount}명`} description="이번 달에 이용권을 갱신한 회원입니다." />
-                <StatCard title="총 매출" value={formatCurrency(totalRevenue)} description="누적된 전체 매출입니다." />
-
             </div>
             
             <div className="bg-orange-50 p-6 rounded-lg shadow-md border border-orange-200">

@@ -413,28 +413,6 @@ const StudentDetailModal: React.FC<{
         onClose();
     };
 
-    const getStatusBadge = (m: Membership) => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const start = new Date(m.startDate);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(m.endDate);
-        end.setHours(0, 0, 0, 0);
-
-        if (start > today) return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-yellow-100 text-yellow-800 border border-yellow-200">예정</span>;
-        
-        if (m.holdStartDate && m.holdEndDate) {
-             const hStart = new Date(m.holdStartDate);
-             hStart.setHours(0, 0, 0, 0);
-             const hEnd = new Date(m.holdEndDate);
-             hEnd.setHours(0, 0, 0, 0);
-             if (today >= hStart && today <= hEnd) return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-800 border border-blue-200">홀딩중</span>;
-        }
-
-        if (end < today) return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-gray-200 text-gray-500 border border-gray-300">만료</span>;
-        return <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-green-100 text-green-800 border border-green-200">사용중</span>;
-    };
-
     // Check if membership is active for upgrade eligibility
     // A membership is active if its end date is in the future or today.
     const isMembershipActive = membership && new Date(membership.endDate) >= new Date(new Date().setHours(0,0,0,0));
@@ -449,24 +427,62 @@ const StudentDetailModal: React.FC<{
                     </button>
                 </div>
 
-                <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2 border-b pb-2">이용권 내역</h3>
+                <div className="mb-8">
+                    <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
+                        <span className="w-1 h-6 bg-indigo-600 rounded-full"></span>
+                        멤버십 이용 히스토리
+                    </h3>
                     {allMemberships.length > 0 ? (
-                        <ul className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                            {allMemberships.map(m => (
-                                <li key={m.id} className={`p-2 rounded-md text-sm ${m.id === membership?.id ? 'bg-indigo-50 border border-indigo-200 ring-1 ring-indigo-300' : 'bg-gray-50 border border-gray-200'}`}>
-                                    <div className="font-semibold flex items-center">
-                                        {m.passType}
-                                        {getStatusBadge(m)}
+                        <div className="relative pl-8 space-y-6 before:content-[''] before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-200">
+                            {allMemberships.map((m, idx) => {
+                                const status = getStatus(m);
+                                return (
+                                    <div key={m.id} className="relative">
+                                        {/* Timeline Dot */}
+                                        <div className={`absolute -left-8 top-1.5 w-4 h-4 rounded-full border-2 border-white shadow-sm ${status.dotColor} z-10`}></div>
+                                        
+                                        <div className={`p-4 rounded-xl border transition-all ${m.id === membership?.id ? 'bg-indigo-50 border-indigo-200 shadow-sm ring-1 ring-indigo-100' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">{idx === 0 ? '최근 이용권' : '과거 기록'}</span>
+                                                    <h4 className="font-bold text-gray-900 text-base">{m.passType}</h4>
+                                                </div>
+                                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md border ${status.color}`}>
+                                                    {status.text}
+                                                </span>
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-2 gap-y-2 text-sm">
+                                                <div className="text-gray-500 flex flex-col">
+                                                    <span className="text-[10px] text-gray-400 uppercase font-semibold">이용 기간</span>
+                                                    <span className="font-medium text-gray-700">
+                                                        {new Date(m.startDate).toLocaleDateString('ko-KR')} ~ {new Date(m.endDate).toLocaleDateString('ko-KR')}
+                                                    </span>
+                                                </div>
+                                                <div className="text-gray-500 flex flex-col text-right">
+                                                    <span className="text-[10px] text-gray-400 uppercase font-semibold">결제 금액</span>
+                                                    <span className="font-bold text-gray-900">
+                                                        {m.price ? m.price.toLocaleString() + '원' : '-'}
+                                                    </span>
+                                                </div>
+                                                {m.holdStartDate && (
+                                                    <div className="col-span-2 mt-1 p-2 bg-amber-50 rounded-lg border border-amber-100 flex items-center gap-2">
+                                                        <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">HOLD</span>
+                                                        <span className="text-xs text-amber-800 font-medium">
+                                                            {new Date(m.holdStartDate).toLocaleDateString('ko-KR')} ~ {m.holdEndDate ? new Date(m.holdEndDate).toLocaleDateString('ko-KR') : ''}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="text-gray-600 mt-1">기간: {new Date(m.startDate).toLocaleDateString('ko-KR')} ~ {new Date(m.endDate).toLocaleDateString('ko-KR')}</div>
-                                    <div className="text-gray-600">금액: {m.price ? m.price.toLocaleString() + '원' : '-'}</div>
-                                    {m.holdStartDate && <div className="text-blue-600 text-xs mt-0.5">홀딩: {new Date(m.holdStartDate).toLocaleDateString('ko-KR')} ~ {m.holdEndDate ? new Date(m.holdEndDate).toLocaleDateString('ko-KR') : ''}</div>}
-                                </li>
-                            ))}
-                        </ul>
+                                );
+                            })}
+                        </div>
                     ) : (
-                        <p className="text-gray-500">등록된 이용권이 없습니다.</p>
+                        <div className="bg-gray-50 rounded-xl p-8 text-center border border-dashed border-gray-300">
+                            <p className="text-gray-500">등록된 이용권 히스토리가 없습니다.</p>
+                        </div>
                     )}
                 </div>
 
@@ -714,18 +730,17 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
     const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
-    const getStatus = (membership: Membership | undefined): { text: string; color: string } => {
-        if (!membership) return { text: '이용권 없음', color: 'bg-gray-200 text-gray-800' };
+    const getStatus = (membership: Membership | undefined): { text: string; color: string; dotColor: string } => {
+        if (!membership) return { text: '이용권 없음', color: 'bg-gray-100 text-gray-600', dotColor: 'bg-gray-400' };
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const start = new Date(membership.startDate);
         start.setHours(0, 0, 0, 0);
 
-        // This check must come first.
         if (start > today) {
             const diffDays = Math.ceil((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-            return { text: `시작 ${diffDays}일 전`, color: 'bg-cyan-200 text-cyan-800' };
+            return { text: `시작 ${diffDays}일 전`, color: 'bg-blue-50 text-blue-700 border-blue-100', dotColor: 'bg-blue-500' };
         }
 
         if (membership.holdStartDate && membership.holdEndDate) {
@@ -735,7 +750,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
             holdEnd.setHours(0, 0, 0, 0);
             
             if (today >= holdStart && today <= holdEnd) {
-                return { text: '홀딩중', color: 'bg-blue-200 text-blue-800' };
+                return { text: '홀딩중', color: 'bg-amber-50 text-amber-700 border-amber-100', dotColor: 'bg-amber-500' };
             }
         }
 
@@ -743,9 +758,9 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
         end.setHours(0, 0, 0, 0);
         const diffDays = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-        if (diffDays < 0) return { text: '만료됨', color: 'bg-red-200 text-red-800' };
-        if (diffDays <= 7) return { text: `${diffDays + 1}일 남음`, color: 'bg-yellow-200 text-yellow-800' };
-        return { text: '이용중', color: 'bg-green-200 text-green-800' };
+        if (diffDays < 0) return { text: '만료됨', color: 'bg-rose-50 text-rose-700 border-rose-100', dotColor: 'bg-rose-500' };
+        if (diffDays <= 7) return { text: `${diffDays + 1}일 남음`, color: 'bg-orange-50 text-orange-700 border-orange-100', dotColor: 'bg-orange-500' };
+        return { text: '이용중', color: 'bg-emerald-50 text-emerald-700 border-emerald-100', dotColor: 'bg-emerald-500' };
     };
 
     const studentData = useMemo(() => {
@@ -831,7 +846,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
         if (!student) return null;
         const studentMemberships = memberships
             .filter(m => m.studentId === selectedStudentId)
-            .sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime());
+            .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
         return { student, allMemberships: studentMemberships, latestMembership: studentMemberships[0] };
     }, [selectedStudentId, students, memberships]);
 
@@ -1111,9 +1126,10 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                                     <td className="px-6 py-4 whitespace-nowrap truncate" title={s.membership?.passType || 'N/A'}>{s.membership?.passType || 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.membership ? `${new Date(s.membership.startDate).toLocaleDateString('ko-KR')} ~ ${new Date(s.combinedEndDate || s.membership.endDate).toLocaleDateString('ko-KR')}` : 'N/A'}</td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${status.color}`}>
+                                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${status.color}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${status.dotColor}`}></span>
                                             {status.text}
-                                        </span>
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap truncate" title={s.phone}>{s.phone}</td>
                                     <td className="px-6 py-4 text-right">
