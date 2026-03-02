@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
+import dayjs from 'dayjs';
 import { Expense, ExpenseCategory } from '../types';
 import { EXPENSE_CATEGORIES_OPTIONS } from '../constants';
-import { DownloadIcon, UploadIcon } from './icons';
+import { DownloadIcon, UploadIcon, PlusIcon, SearchIcon } from './icons';
 
 interface ExpenseManagerProps {
     expenses: Expense[];
@@ -11,7 +12,6 @@ interface ExpenseManagerProps {
     importExpenses: (data: any[]) => void;
 }
 
-// Helper to parse CSV (Duplicated to avoid external dependency issues in this context)
 function parseCsvLine(line: string): string[] {
     const result: string[] = [];
     let currentField = '';
@@ -37,10 +37,13 @@ function parseCsvLine(line: string): string[] {
 }
 
 export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExpense, deleteExpense, importExpenses }) => {
-    const [date, setDate] = useState(new Date().toISOString()?.split('T')[0]);
+    const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [category, setCategory] = useState<ExpenseCategory>(ExpenseCategory.SUPPLIES);
     const [description, setDescription] = useState('');
     const [amount, setAmount] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const [currentMonth, setCurrentMonth] = useState(dayjs());
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -51,20 +54,24 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
                 description,
                 amount: Number(amount)
             });
-            // Reset form
-            setDate(new Date().toISOString()?.split('T')[0]);
+            setDate(dayjs().format('YYYY-MM-DD'));
             setCategory(ExpenseCategory.SUPPLIES);
             setDescription('');
             setAmount('');
         }
     };
     
-    const sortedExpenses = useMemo(() => {
-        return [...expenses].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [expenses]);
+    const filteredExpenses = useMemo(() => {
+        return expenses
+            .filter(e => dayjs(e.date).isSame(currentMonth, 'month'))
+            .filter(e => (e.description || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || (e.category || '').includes(searchTerm))
+            .sort((a,b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf());
+    }, [expenses, searchTerm, currentMonth]);
 
-    const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat('ko-KR').format(value) + '원';
+    const formatCurrency = (value: number | string) => {
+        const numValue = typeof value === 'string' ? parseFloat(value.replace(/[^0-9.-]+/g, "")) : value;
+        if (isNaN(numValue)) return '0원';
+        return numValue.toLocaleString() + '원';
     };
 
     const handleExport = () => {
@@ -72,16 +79,9 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
             alert('내보낼 지출 내역이 없습니다.');
             return;
         }
-
-        const headerMapping = {
-            date: '날짜',
-            category: '분류',
-            description: '내용',
-            amount: '금액'
-        };
+        const headerMapping = { date: '날짜', category: '분류', description: '내용', amount: '금액' };
         const englishHeaders = Object.keys(headerMapping);
         const koreanHeaders = Object.values(headerMapping);
-
         const csvRows = expenses.map(exp => 
             englishHeaders.map(header => {
                 let value = exp[header as keyof Expense];
@@ -93,13 +93,12 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
                 return stringValue;
             }).join(',')
         );
-
         const csvContent = "\uFEFF" + [koreanHeaders.join(','), ...csvRows].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        const today = new Date().toISOString()?.split('T')[0];
+        const today = dayjs().format('YYYY-MM-DD');
         link.setAttribute('download', `yogao_expenses_${today}.csv`);
         document.body.appendChild(link);
         link.click();
@@ -109,75 +108,38 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
     const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = (e) => {
             const text = e.target?.result as string;
-            if (!text) {
-                alert('파일을 읽을 수 없습니다.');
-                return;
-            }
-
+            if (!text) return;
             try {
                 const lines = text?.split(/\r\n|\n/)?.filter(line => line.trim() !== '');
-                if (lines.length < 2) {
-                    alert('파일에 헤더 외 데이터가 없습니다.');
-                    return;
-                }
-                
-                const koreanToEnglishMap: { [key: string]: string } = {
-                    '날짜': 'date',
-                    '분류': 'category',
-                    '내용': 'description',
-                    '금액': 'amount'
-                };
-
+                if (lines.length < 2) return;
+                const koreanToEnglishMap: { [key: string]: string } = { '날짜': 'date', '분류': 'category', '내용': 'description', '금액': 'amount' };
                 const headerLine = parseCsvLine(lines[0]).map(h => h.trim().replace(/^\uFEFF/, ''));
                 const headerIndexMap: { [key: string]: number } = {};
-                
                 headerLine.forEach((h, i) => {
                     const englishKey = koreanToEnglishMap[h];
                     if (englishKey) headerIndexMap[englishKey] = i;
                 });
-
                 const validData: any[] = [];
-                const expenseCategories = EXPENSE_CATEGORIES_OPTIONS.map(o => o.value);
-
                 lines.slice(1).forEach(line => {
                     const values = parseCsvLine(line);
                     const rowObj: { [key: string]: any } = {};
-                    
                     Object.keys(headerIndexMap).forEach(englishKey => {
                         const idx = headerIndexMap[englishKey];
-                        if (values[idx] !== undefined) {
-                            rowObj[englishKey] = values[idx];
-                        }
+                        if (values[idx] !== undefined) rowObj[englishKey] = values[idx];
                     });
-
-                    // Validation
                     if (rowObj.date && rowObj.category && rowObj.description && rowObj.amount) {
-                         // Check valid category
-                         if (!expenseCategories.includes(rowObj.category)) {
-                             // Optional: map to OTHER if invalid, or skip? Let's skip or alert in real app. 
-                             // For now, accept and let user correct later or filter out.
-                             // Actually better to be strict or default to OTHER.
-                             if (!Object.values(ExpenseCategory).includes(rowObj.category)) {
-                                 rowObj.category = ExpenseCategory.OTHER;
-                             }
+                         if (!Object.values(ExpenseCategory).includes(rowObj.category)) {
+                             rowObj.category = ExpenseCategory.OTHER;
                          }
                         validData.push(rowObj);
                     }
                 });
-
-                if (validData.length > 0) {
-                    importExpenses(validData);
-                } else {
-                    alert('가져올 유효한 지출 데이터가 없습니다. CSV 형식을 확인해주세요.');
-                }
-
+                if (validData.length > 0) importExpenses(validData);
             } catch (error) {
                 console.error("Error parsing CSV:", error);
-                alert("CSV 파일을 처리하는 중 오류가 발생했습니다.");
             }
         };
         reader.readAsText(file, 'UTF-8');
@@ -185,80 +147,120 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                <h1 className="text-3xl font-bold text-gray-800">가계부 (지출 관리)</h1>
-                <div className="flex items-center gap-2">
+        <div className="space-y-8">
+            <div className="flex justify-between items-end">
+                <div>
+                    <h2 className="text-3xl font-bold text-gray-900">지출 관리</h2>
+                    <p className="text-gray-500 mt-1">스튜디오 운영을 위한 모든 지출 내역 관리</p>
+                </div>
+                <div className="flex gap-3 items-center">
+                    <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-sm mr-2">
+                        <button onClick={() => setCurrentMonth(d => d.subtract(1, 'month'))} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400">&lt;</button>
+                        <span className="px-4 text-sm font-bold text-gray-700">{currentMonth.format('YYYY년 MM월')}</span>
+                        <button onClick={() => setCurrentMonth(d => d.add(1, 'month'))} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400">&gt;</button>
+                    </div>
                     <input type="file" id="expense-import" className="hidden" accept=".csv" onChange={handleImport} />
-                    <label htmlFor="expense-import" className="bg-gray-600 text-white px-3 py-2 rounded-md hover:bg-gray-700 whitespace-nowrap cursor-pointer inline-flex items-center gap-2 text-sm">
+                    <label htmlFor="expense-import" className="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm cursor-pointer text-sm">
                         <UploadIcon className="w-4 h-4" /> 가져오기
                     </label>
-                    <button onClick={handleExport} className="bg-gray-600 text-white px-3 py-2 rounded-md hover:bg-gray-700 whitespace-nowrap inline-flex items-center gap-2 text-sm">
-                       <DownloadIcon className="w-4 h-4" /> 내보내기
+                    <button onClick={handleExport} className="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm">
+                        <DownloadIcon className="w-4 h-4" /> 내보내기
                     </button>
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-700 mb-4">지출 항목 추가</h2>
-                <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-                    <div className="lg:col-span-1">
-                        <label htmlFor="exp-date" className="block text-sm font-medium text-gray-700">날짜</label>
-                        <input type="date" id="exp-date" value={date} onChange={e => setDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Add Form */}
+                <div className="lg:col-span-1">
+                    <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 sticky top-8">
+                        <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                            <PlusIcon className="w-5 h-5 text-indigo-600" />
+                            지출 항목 추가
+                        </h3>
+                        <form onSubmit={handleSubmit} className="space-y-5">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">날짜</label>
+                                <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">품목</label>
+                                <select value={category} onChange={e => setCategory(e.target.value as ExpenseCategory)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    {EXPENSE_CATEGORIES_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">내용</label>
+                                <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="예: 요가 매트 구매" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">금액</label>
+                                <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold" required />
+                            </div>
+                            <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 mt-4">
+                                지출 등록
+                            </button>
+                        </form>
                     </div>
-                    <div className="lg:col-span-1">
-                        <label htmlFor="exp-category" className="block text-sm font-medium text-gray-700">품목</label>
-                        <select id="exp-category" value={category} onChange={e => setCategory(e.target.value as ExpenseCategory)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
-                            {EXPENSE_CATEGORIES_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
-                    </div>
-                    <div className="lg:col-span-1">
-                        <label htmlFor="exp-desc" className="block text-sm font-medium text-gray-700">내용</label>
-                        <input type="text" id="exp-desc" value={description} onChange={e => setDescription(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
-                    </div>
-                    <div className="lg:col-span-1">
-                        <label htmlFor="exp-amount" className="block text-sm font-medium text-gray-700">금액</label>
-                        <input type="number" id="exp-amount" value={amount} onChange={e => setAmount(e.target.value)} placeholder="숫자만 입력" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
-                    </div>
-                    <div className="lg:col-span-1">
-                         <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 w-full">추가하기</button>
-                    </div>
-                </form>
-            </div>
+                </div>
 
-            <div className="bg-white shadow-md rounded-lg overflow-x-auto">
-                 <table className="w-full text-sm text-left text-gray-500">
-                    <thead className="text-xs text-gray-700 uppercase bg-gray-100">
-                        <tr>
-                            <th scope="col" className="px-6 py-3">날짜</th>
-                            <th scope="col" className="px-6 py-3">품목</th>
-                            <th scope="col" className="px-6 py-3">내용</th>
-                            <th scope="col" className="px-6 py-3 text-right">금액</th>
-                            <th scope="col" className="px-6 py-3 text-right">관리</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sortedExpenses.length > 0 ? sortedExpenses.map(exp => (
-                            <tr key={exp.id} className="bg-white border-b hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap">{new Date(exp.date).toLocaleDateString('ko-KR')}</td>
-                                <td className="px-6 py-4">
-                                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-200 text-gray-800">
-                                        {exp.category}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4">{exp.description}</td>
-                                <td className="px-6 py-4 text-right font-medium text-gray-800">{formatCurrency(exp.amount)}</td>
-                                <td className="px-6 py-4 text-right">
-                                    <button onClick={() => window.confirm(`이 지출 항목을 삭제하시겠습니까?`) && deleteExpense(exp.id)} className="font-medium text-red-600 hover:underline">삭제</button>
-                                </td>
-                            </tr>
-                        )) : (
-                            <tr>
-                                <td colSpan={5} className="text-center py-10 text-gray-500">등록된 지출 내역이 없습니다.</td>
-                            </tr>
+                {/* List */}
+                <div className="lg:col-span-2 space-y-6">
+                    <div className="relative">
+                        <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="지출 내역 검색..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-12 pr-4 py-4 bg-white border border-gray-100 rounded-2xl shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                    </div>
+
+                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50/50 border-b border-gray-100">
+                                        <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">날짜</th>
+                                        <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">분류</th>
+                                        <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">내용</th>
+                                        <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right">금액</th>
+                                        <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right">관리</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {filteredExpenses.map(exp => (
+                                        <tr key={exp.id} className="hover:bg-gray-50/50 transition-colors group">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {dayjs(exp.date).format('YYYY-MM-DD')}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-gray-100 text-gray-600 border border-gray-200">
+                                                    {exp.category}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm font-medium text-gray-900">{exp.description}</td>
+                                            <td className="px-6 py-4 text-right font-bold text-gray-900">{formatCurrency(exp.amount)}</td>
+                                            <td className="px-6 py-4 text-right">
+                                                <button 
+                                                    onClick={() => window.confirm(`이 지출 항목을 삭제하시겠습니까?`) && deleteExpense(exp.id)} 
+                                                    className="text-gray-300 hover:text-rose-600 transition-colors"
+                                                >
+                                                    삭제
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {filteredExpenses.length === 0 && (
+                            <div className="p-12 text-center text-gray-400">
+                                등록된 지출 내역이 없습니다.
+                            </div>
                         )}
-                    </tbody>
-                </table>
+                    </div>
+                </div>
             </div>
         </div>
     );

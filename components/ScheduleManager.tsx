@@ -1,14 +1,15 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import dayjs from 'dayjs';
 import { Student, AttendanceRecord, Membership, ClassSchedule } from '../types';
 import { CLASS_COLORS } from '../constants';
-import { CloseIcon, DownloadIcon, UploadIcon } from './icons';
+import { CloseIcon, DownloadIcon, UploadIcon, PlusIcon, SearchIcon } from './icons';
 
 interface ScheduleManagerProps {
     students: Student[];
     memberships: Membership[];
     attendance: AttendanceRecord[];
-    toggleAttendance: (studentId: string, date: string, classTime: string) => void;
+    toggleAttendance: (studentId: string, date: string, classTime: string, classId?: string) => void;
     schedule: ClassSchedule[];
     addOrUpdateSchedule: (classData: ClassSchedule) => void;
     deleteSchedule: (classId: string) => void;
@@ -16,17 +17,12 @@ interface ScheduleManagerProps {
 }
 
 const DAYS = ['월', '화', '수', '목', '금', '토'];
-const HOURS = Array.from({ length: 17 }, (_, i) => i + 6); // 6 AM to 10 PM (22:00)
+const HOURS = Array.from({ length: 17 }, (_, i) => i + 6); // 6 AM to 10 PM
 
-// Helper to get the start of the week (Monday)
-const getStartOfWeek = (date: Date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
-    return new Date(d.setDate(diff));
+const getStartOfWeek = (date: dayjs.Dayjs) => {
+    return date.startOf('week').add(1, 'day'); // Monday
 };
 
-// CSV Parser (Duplicated from StudentManager to avoid file dependency issues in single file edit context, or could be moved to utils)
 function parseCsvLine(line: string): string[] {
     const result: string[] = [];
     let currentField = '';
@@ -35,9 +31,8 @@ function parseCsvLine(line: string): string[] {
         const char = line[i];
         if (char === '"') {
             if (inQuotes && line[i + 1] === '"') {
-                // Escaped quote
                 currentField += '"';
-                i++; // Skip next quote
+                i++;
             } else {
                 inQuotes = !inQuotes;
             }
@@ -48,20 +43,18 @@ function parseCsvLine(line: string): string[] {
             currentField += char;
         }
     }
-    result.push(currentField.trim()); // Add the last field
+    result.push(currentField.trim());
     return result;
 }
 
-
 export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
-    const [currentDate, setCurrentDate] = useState(new Date());
+    const [currentDate, setCurrentDate] = useState(dayjs());
     const [modalInfo, setModalInfo] = useState<{ type: 'attendance' | 'edit'; data: any } | null>(null);
 
     const startOfWeek = getStartOfWeek(currentDate);
 
     const handleClassClick = (classItem: ClassSchedule, dayIndex: number) => {
-        const classDate = new Date(startOfWeek);
-        classDate.setDate(startOfWeek.getDate() + dayIndex);
+        const classDate = startOfWeek.add(dayIndex, 'day');
         setModalInfo({ type: 'attendance', data: { classItem, date: classDate } });
     };
     
@@ -91,57 +84,34 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     };
 
     const handleDeleteClass = (classId: string) => {
-        if (window.confirm('이 수업을 삭제하시겠습니까?')) {
-            props.deleteSchedule(classId);
-            setModalInfo(null);
-        }
+        props.deleteSchedule(classId);
+        setModalInfo(null);
     };
 
     const handleExport = () => {
-        if (props.attendance.length === 0) {
-            alert('내보낼 출석 데이터가 없습니다.');
-            return;
-        }
-
-        const headerMapping = {
-            student_id: '회원 ID',
-            student_name: '이름',
-            student_phone: '연락처',
-            attendance_date: '출석 날짜',
-            class_time: '수업 시간 정보'
-        };
+        if (props.attendance.length === 0) return;
+        const headerMapping = { student_id: '회원 ID', student_name: '이름', student_phone: '연락처', attendance_date: '출석 날짜', class_time: '수업 시간 정보' };
         const englishHeaders = Object.keys(headerMapping);
         const koreanHeaders = Object.values(headerMapping);
-
         const dataToExport = props.attendance.map(record => {
             const student = props.students.find(s => s.id === record.studentId);
-            return {
-                student_id: record.studentId,
-                student_name: student ? student.name : '알 수 없음',
-                student_phone: student ? student.phone : '',
-                attendance_date: record.date,
-                class_time: record.classTime
-            };
+            return { student_id: record.studentId, student_name: student ? student.name : '알 수 없음', student_phone: student ? student.phone : '', attendance_date: record.date, class_time: record.classTime };
         });
-
-        const csvRows = dataToExport.map(row => 
-            englishHeaders.map(header => {
-                let value = row[header as keyof typeof row];
-                if (value === null || value === undefined) return '';
-                let stringValue = String(value);
-                if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-                    stringValue = `"${stringValue.replace(/"/g, '""')}"`;
-                }
-                return stringValue;
-            }).join(',')
-        );
-
+        const csvRows = dataToExport.map(row => englishHeaders.map(header => {
+            let value = row[header as keyof typeof row];
+            if (value === null || value === undefined) return '';
+            let stringValue = String(value);
+            if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                stringValue = `"${stringValue.replace(/"/g, '""')}"`;
+            }
+            return stringValue;
+        }).join(','));
         const csvContent = "\uFEFF" + [koreanHeaders.join(','), ...csvRows].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        const today = new Date().toISOString()?.split('T')[0];
+        const today = dayjs().format('YYYY-MM-DD');
         link.setAttribute('download', `yogao_attendance_${today}.csv`);
         document.body.appendChild(link);
         link.click();
@@ -151,65 +121,33 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = (e) => {
             const text = e.target?.result as string;
-            if (!text) {
-                alert('파일을 읽을 수 없습니다.');
-                return;
-            }
-
+            if (!text) return;
             try {
                 const lines = text?.split(/\r\n|\n/)?.filter(line => line.trim() !== '');
-                if (lines.length < 2) {
-                    alert('파일에 헤더 외 데이터가 없습니다.');
-                    return;
-                }
-                
-                const koreanToEnglishMap: { [key: string]: string } = {
-                    '회원 ID': 'student_id',
-                    '이름': 'student_name',
-                    '연락처': 'student_phone',
-                    '출석 날짜': 'attendance_date',
-                    '수업 시간 정보': 'class_time'
-                };
-
+                if (lines.length < 2) return;
+                const koreanToEnglishMap: { [key: string]: string } = { '회원 ID': 'student_id', '이름': 'student_name', '연락처': 'student_phone', '출석 날짜': 'attendance_date', '수업 시간 정보': 'class_time' };
                 const headerLine = parseCsvLine(lines[0]).map(h => h.trim().replace(/^\uFEFF/, ''));
                 const headerIndexMap: { [key: string]: number } = {};
-                
                 headerLine.forEach((h, i) => {
                     const englishKey = koreanToEnglishMap[h];
                     if (englishKey) headerIndexMap[englishKey] = i;
                 });
-
                 const validData: any[] = [];
-                
                 lines.slice(1).forEach(line => {
                     const values = parseCsvLine(line);
                     const rowObj: { [key: string]: any } = {};
-                    
                     Object.keys(headerIndexMap).forEach(englishKey => {
                         const idx = headerIndexMap[englishKey];
-                        if (values[idx] !== undefined) {
-                            rowObj[englishKey] = values[idx];
-                        }
+                        if (values[idx] !== undefined) rowObj[englishKey] = values[idx];
                     });
-
-                    if (rowObj.attendance_date && rowObj.class_time) {
-                        validData.push(rowObj);
-                    }
+                    if (rowObj.attendance_date && rowObj.class_time) validData.push(rowObj);
                 });
-
-                if (validData.length > 0) {
-                    props.importAttendance(validData);
-                } else {
-                    alert('가져올 유효한 출석 데이터가 없습니다.');
-                }
-
+                if (validData.length > 0) props.importAttendance(validData);
             } catch (error) {
                 console.error("Error parsing CSV:", error);
-                alert("CSV 파일을 처리하는 중 오류가 발생했습니다.");
             }
         };
         reader.readAsText(file, 'UTF-8');
@@ -221,93 +159,92 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
         const [endHour, endMinute] = classItem.endTime?.split(':')?.map(Number) || [0, 0];
         const totalStartMinutes = startHour * 60 + startMinute;
         const totalEndMinutes = endHour * 60 + endMinute;
-
         const top = ((totalStartMinutes - HOURS[0] * 60) / ((HOURS.length) * 60)) * 100;
         const height = ((totalEndMinutes - totalStartMinutes) / ((HOURS.length) * 60)) * 100;
-
         const colorClasses = CLASS_COLORS[classItem.color]?.classes || CLASS_COLORS['blue'].classes;
-
-        const classDate = new Date(startOfWeek);
-        classDate.setDate(startOfWeek.getDate() + dayIndex);
-        const dateString = classDate.toISOString()?.split('T')[0];
+        const classDate = startOfWeek.add(dayIndex, 'day');
+        const dateString = classDate.format('YYYY-MM-DD');
         const classTimeString = `${classItem.startTime} - ${classItem.className}`;
-        const attendanceCount = props.attendance.filter(a =>
-            a.date === dateString && a.classTime === classTimeString
-        ).length;
+        const attendanceCount = props.attendance.filter(a => {
+            if (a.classId && classItem.id) {
+                return a.date === dateString && a.classId === classItem.id;
+            }
+            return a.date === dateString && a.classTime === classTimeString;
+        }).length;
 
         return (
             <div
                 key={classItem.id}
-                className={`absolute w-full p-2 rounded-lg border text-xs cursor-pointer ${colorClasses} overflow-hidden`}
+                className={`absolute w-[95%] left-[2.5%] p-3 rounded-xl border text-xs cursor-pointer shadow-sm transition-all hover:scale-[1.02] hover:shadow-md ${colorClasses} overflow-hidden`}
                 style={{ top: `${top}%`, height: `${height}%` }}
                 onClick={() => handleClassClick(classItem, dayIndex)}
             >
-                <p className="font-bold">{classItem.className}</p>
-                <p>{classItem.startTime} - {classItem.endTime}</p>
+                <div className="flex justify-between items-start">
+                    <p className="font-bold text-sm truncate">{classItem.className}</p>
+                    <button onClick={(e) => handleEditClick(e, classItem)} className="p-1 hover:bg-black/5 rounded-md transition-colors">
+                        <PlusIcon className="w-3 h-3 rotate-45" />
+                    </button>
+                </div>
+                <p className="opacity-80 font-medium">{classItem.startTime} - {classItem.endTime}</p>
                 {attendanceCount > 0 && (
-                    <div className="absolute top-1 right-1 text-xs font-semibold bg-white/70 text-gray-800 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+                    <div className="absolute bottom-2 right-2 text-[10px] font-bold bg-white/80 text-gray-800 px-2 py-0.5 rounded-full backdrop-blur-sm border border-white/50">
                         {attendanceCount}명 출석
                     </div>
                 )}
-                 <button onClick={(e) => handleEditClick(e, classItem)} className="absolute bottom-1 right-1 text-xs hover:underline">편집</button>
             </div>
         );
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                <h1 className="text-3xl font-bold text-gray-800">시간표 & 출결 관리</h1>
-                
-                <div className="flex items-center gap-2 w-full md:w-auto flex-wrap justify-start md:justify-end">
-                     <div className="flex items-center gap-4 mr-4">
-                        <button onClick={() => setCurrentDate(d => new Date(d.setDate(d.getDate() - 7)))} className="px-3 py-1 rounded bg-white border shadow-sm">&lt; 이전 주</button>
-                        <span className="font-semibold">{startOfWeek.toLocaleDateString('ko-KR')} ~ {new Date(new Date(startOfWeek).setDate(startOfWeek.getDate() + 5)).toLocaleDateString('ko-KR')}</span>
-                        <button onClick={() => setCurrentDate(d => new Date(d.setDate(d.getDate() + 7)))} className="px-3 py-1 rounded bg-white border shadow-sm">다음 주 &gt;</button>
+        <div className="space-y-8">
+            <div className="flex justify-between items-end">
+                <div>
+                    <h2 className="text-3xl font-bold text-gray-900">시간표 & 출결</h2>
+                    <p className="text-gray-500 mt-1">주간 수업 일정 관리 및 출석 현황 확인</p>
+                </div>
+                <div className="flex gap-3">
+                    <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
+                        <button onClick={() => setCurrentDate(d => d.subtract(7, 'day'))} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400">&lt;</button>
+                        <span className="px-4 text-sm font-bold text-gray-700">{startOfWeek.format('YYYY-MM-DD')} ~ {startOfWeek.add(5, 'day').format('YYYY-MM-DD')}</span>
+                        <button onClick={() => setCurrentDate(d => d.add(7, 'day'))} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400">&gt;</button>
                     </div>
-                    
-                    <div className="h-6 w-px bg-gray-300 mx-2 hidden md:block"></div>
-
                     <input type="file" id="attendance-import" className="hidden" accept=".csv" onChange={handleImport} />
-                    <label htmlFor="attendance-import" className="bg-gray-600 text-white px-3 py-2 rounded-md hover:bg-gray-700 whitespace-nowrap cursor-pointer inline-flex items-center gap-2 text-sm">
-                        <UploadIcon className="w-4 h-4" /> 출석부 가져오기
+                    <label htmlFor="attendance-import" className="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm cursor-pointer text-sm">
+                        <UploadIcon className="w-4 h-4" /> 가져오기
                     </label>
-                    <button onClick={handleExport} className="bg-gray-600 text-white px-3 py-2 rounded-md hover:bg-gray-700 whitespace-nowrap inline-flex items-center gap-2 text-sm">
-                       <DownloadIcon className="w-4 h-4" /> 출석부 내보내기
+                    <button onClick={handleExport} className="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm">
+                        <DownloadIcon className="w-4 h-4" /> 내보내기
                     </button>
                 </div>
             </div>
 
-            <div className="bg-white shadow-md rounded-lg overflow-x-auto">
-                <div className="grid grid-cols-[auto_repeat(6,1fr)] min-w-[800px]">
-                    {/* Time Header */}
-                    <div className="border-r border-b"></div>
-                    {/* Day Headers */}
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="grid grid-cols-[80px_repeat(6,1fr)] min-w-[900px]">
+                    <div className="bg-gray-50/50 border-r border-b border-gray-100"></div>
                     {DAYS.map((day, i) => {
-                        const d = new Date(startOfWeek);
-                        d.setDate(d.getDate() + i);
+                        const d = startOfWeek.add(i, 'day');
                         return (
-                             <div key={day} className="text-center font-semibold p-2 border-b">
-                                {day}
-                                <div className="text-sm text-gray-500 font-normal">{d.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}</div>
+                             <div key={day} className="text-center py-4 border-b border-gray-100 bg-gray-50/50">
+                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{day}</div>
+                                <div className="text-sm font-bold text-gray-900">{d.date()}일</div>
                             </div>
                         )
                     })}
                     
-                    {/* Time Column */}
-                    <div className="row-span-1">
+                    <div className="border-r border-gray-100">
                         {HOURS.map(hour => (
-                            <div key={hour} className="h-24 flex justify-end items-start pr-2 border-r">
-                                <span className="text-sm text-gray-500 relative -top-2">{hour}:00</span>
+                            <div key={hour} className="h-28 flex justify-center items-start pt-2 border-b border-gray-50">
+                                <span className="text-[10px] font-bold text-gray-300">{hour}:00</span>
                             </div>
                         ))}
                     </div>
 
-                    {/* Schedule Grid */}
                     {DAYS.map((_, dayIndex) => (
-                        <div key={dayIndex} className="relative border-r">
+                        <div key={dayIndex} className="relative border-r border-gray-100">
                             {HOURS.map(hour => (
-                                <div key={hour} onClick={() => handleEmptySlotClick(dayIndex, hour)} className="h-24 border-b hover:bg-gray-50 cursor-pointer"></div>
+                                <div key={hour} onClick={() => handleEmptySlotClick(dayIndex, hour)} className="h-28 border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group flex items-center justify-center">
+                                    <PlusIcon className="w-4 h-4 text-gray-200 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </div>
                             ))}
                             {props.schedule.filter(c => c.dayOfWeek === dayIndex + 1).map(c => renderClassBlock(c, dayIndex))}
                         </div>
@@ -340,114 +277,91 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
 const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; onClose: () => void; classInfo: { classItem: ClassSchedule, date: Date } }> = ({ isOpen, onClose, students, memberships, attendance, toggleAttendance, classInfo }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const { classItem, date } = classInfo;
-    
     const dateString = date.toISOString()?.split('T')[0];
     const classTimeString = `${classItem.startTime} - ${classItem.className}`;
 
-    const activeStudents = useMemo(() => {
-        // Normalize the class date to midnight (00:00:00) to ignore time parts
-        const targetDate = new Date(date);
-        targetDate.setHours(0, 0, 0, 0);
-
-        return students.filter(student => {
-            // Find ALL memberships for this student, not just the first one
-            const studentMemberships = memberships.filter(m => m.studentId === student.id);
-            if (studentMemberships.length === 0) return false;
-            
-            // Check if ANY of the student's memberships are active for the target date
-            return studentMemberships.some(membership => {
-                // Normalize membership start/end dates to midnight
-                const startDate = new Date(membership.startDate);
-                startDate.setHours(0, 0, 0, 0);
-                
-                const endDate = new Date(membership.endDate);
-                endDate.setHours(0, 0, 0, 0);
-
-                if (membership.holdStartDate && membership.holdEndDate) {
-                    const holdStart = new Date(membership.holdStartDate);
-                    holdStart.setHours(0, 0, 0, 0);
-                    const holdEnd = new Date(membership.holdEndDate);
-                    holdEnd.setHours(0, 0, 0, 0);
-                    // If currently in holding period, consider inactive
-                    if (targetDate >= holdStart && targetDate <= holdEnd) return false;
-                }
-
-                // Check date range
-                return targetDate >= startDate && targetDate <= endDate;
-            });
-        }).filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
-          .sort((a, b) => a.name.localeCompare(b.name));
-    }, [students, memberships, date, searchTerm]);
-    
-    const getEndDateString = (studentId: string) => {
-        const targetDate = new Date(date);
-        targetDate.setHours(0, 0, 0, 0);
-
-        const studentMemberships = memberships.filter(m => m.studentId === studentId);
+    const displayStudents = useMemo(() => {
+        const targetDate = dayjs(date).startOf('day');
         
-        const activeMembership = studentMemberships.find(membership => {
-            const startDate = new Date(membership.startDate);
-            startDate.setHours(0, 0, 0, 0);
-            
-            const endDate = new Date(membership.endDate);
-            endDate.setHours(0, 0, 0, 0);
-
-            if (membership.holdStartDate && membership.holdEndDate) {
-                const holdStart = new Date(membership.holdStartDate);
-                holdStart.setHours(0, 0, 0, 0);
-                const holdEnd = new Date(membership.holdEndDate);
-                holdEnd.setHours(0, 0, 0, 0);
-                if (targetDate >= holdStart && targetDate <= holdEnd) return false;
-            }
-
-            return targetDate >= startDate && targetDate <= endDate;
+        // 1. Get active students
+        const active = students.filter(student => {
+            const studentMemberships = memberships.filter(m => m.studentId === student.id);
+            return studentMemberships.some(membership => {
+                const startDate = dayjs(membership.startDate).startOf('day');
+                const endDate = dayjs(membership.endDate).startOf('day');
+                
+                if (membership.holdStartDate && membership.holdEndDate) {
+                    const holdStart = dayjs(membership.holdStartDate).startOf('day');
+                    const holdEnd = dayjs(membership.holdEndDate).startOf('day');
+                    if ((targetDate.isAfter(holdStart) || targetDate.isSame(holdStart)) && (targetDate.isBefore(holdEnd) || targetDate.isSame(holdEnd))) return false;
+                }
+                return (targetDate.isAfter(startDate) || targetDate.isSame(startDate)) && (targetDate.isBefore(endDate) || targetDate.isSame(endDate)) && !membership.refundAmount;
+            });
         });
 
-        if (activeMembership) {
-            const endDate = new Date(activeMembership.endDate);
-            const mm = String(endDate.getMonth() + 1).padStart(2, '0');
-            const dd = String(endDate.getDate()).padStart(2, '0');
-            const yyyy = endDate.getFullYear();
-            return `${mm}/${dd}/${yyyy}`;
-        }
-        return null;
-    };
+        // 2. Get attended students for this specific class
+        const attended = attendance
+            .filter(a => {
+                if (a.classId && classItem.id) {
+                    return a.date === dateString && a.classId === classItem.id;
+                }
+                return a.date === dateString && a.classTime === classTimeString;
+            })
+            .map(a => {
+                const s = students.find(s => s.id === a.studentId);
+                return s || { id: a.studentId, name: a.studentName || 'Unknown', phone: a.studentPhone || '', registrationDate: '' };
+            });
 
-    const isAttended = (studentId: string) => attendance.some(a => a.studentId === studentId && a.date === dateString && a.classTime === classTimeString);
+        // 3. Merge and deduplicate
+        const studentMap = new Map<string, Student>();
+        active.forEach(s => studentMap.set(s.id, s));
+        attended.forEach(s => studentMap.set(s.id, s as Student));
+
+        return Array.from(studentMap.values())
+            .filter(s => (s.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()))
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            
+    }, [students, memberships, date, searchTerm, attendance, dateString, classTimeString, classItem.id]);
+    
+    const isAttended = (studentId: string) => attendance.some(a => {
+        if (a.classId && classItem.id) {
+            return a.studentId === studentId && a.date === dateString && a.classId === classItem.id;
+        }
+        return a.studentId === studentId && a.date === dateString && a.classTime === classTimeString;
+    });
 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-            <div className="bg-white rounded-lg p-8 shadow-2xl w-full max-w-lg m-4 max-h-[90vh] flex flex-col">
-                <div className="flex justify-between items-center mb-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+            <div className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+                <div className="flex justify-between items-start mb-6">
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-800">{classItem.className} - 출석부</h2>
-                        <p className="text-gray-600">{date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })} {classItem.startTime}</p>
+                        <h2 className="text-2xl font-bold text-gray-900">{classItem.className}</h2>
+                        <p className="text-sm text-gray-500 font-medium mt-1">
+                            {dayjs(date).format('MM월 DD일 dddd')} • {classItem.startTime}
+                        </p>
                     </div>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800"><CloseIcon className="w-6 h-6" /></button>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2"><CloseIcon className="w-6 h-6" /></button>
                 </div>
-                <input type="text" placeholder="이름으로 검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 mb-4"/>
-                <ul className="divide-y divide-gray-200 overflow-y-auto flex-1">
-                    {activeStudents.map(student => (
-                        <li key={student.id} className="py-3 px-2 flex justify-between items-center hover:bg-gray-50 rounded">
+                <div className="relative mb-6">
+                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input type="text" placeholder="회원 이름 검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"/>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2 space-y-2">
+                    {displayStudents.map(student => (
+                        <div key={student.id} className="p-4 flex justify-between items-center bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors">
                             <div>
-                                <div className="flex items-center gap-2">
-                                    <p className="font-medium text-gray-900">{student.name}</p>
-                                    {(() => {
-                                        const dateStr = getEndDateString(student.id);
-                                        return dateStr ? <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">만료일: {dateStr}</span> : null;
-                                    })()}
-                                </div>
-                                <p className="text-sm text-gray-500">{student.phone}</p>
+                                <p className="font-bold text-gray-900">{student.name}</p>
+                                <p className="text-[10px] text-gray-400 font-medium">{student.phone}</p>
                             </div>
-                             <input type="checkbox" checked={isAttended(student.id)} onChange={() => toggleAttendance(student.id, dateString, classTimeString)} className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"/>
-                        </li>
+                             <input type="checkbox" checked={isAttended(student.id)} onChange={() => toggleAttendance(student.id, dateString, classTimeString, classItem.id)} className="h-6 w-6 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 cursor-pointer"/>
+                        </div>
                     ))}
-                     {activeStudents.length === 0 && <li className="py-10 text-center text-gray-500">해당 날짜에 유효한 회원이 없습니다.</li>}
-                </ul>
-                 <div className="flex justify-end pt-4 mt-auto">
-                    <button onClick={onClose} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">닫기</button>
+                    {displayStudents.length === 0 && <div className="py-12 text-center text-gray-400">유효한 회원이 없습니다.</div>}
+                </div>
+                 <div className="pt-6 mt-auto">
+                    <button onClick={onClose} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100">확인</button>
                  </div>
             </div>
         </div>
@@ -463,67 +377,61 @@ const AddEditClassModal: React.FC<{
     isNew: boolean;
 }> = ({ isOpen, onClose, onSave, onDelete, classData, isNew }) => {
     const [formData, setFormData] = useState<ClassSchedule>(classData);
-
-    useEffect(() => {
-        setFormData(classData);
-    }, [classData]);
-
+    useEffect(() => { setFormData(classData); }, [classData]);
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: name === 'dayOfWeek' ? Number(value) : value }));
     };
-
-    const handleSave = (e: React.FormEvent) => {
-        e.preventDefault();
-        onSave(formData);
-    };
-
     if (!isOpen) return null;
-
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-            <div className="bg-white rounded-lg p-8 shadow-2xl w-full max-w-md">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-bold text-gray-800">{isNew ? '새로운 수업 추가' : '수업 정보 수정'}</h2>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800"><CloseIcon className="w-6 h-6" /></button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+            <div className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md">
+                <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900">{isNew ? '수업 추가' : '수업 수정'}</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><CloseIcon className="w-6 h-6" /></button>
                 </div>
-                <form onSubmit={handleSave} className="space-y-4">
+                <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }} className="space-y-6">
                     <div>
-                        <label className="block text-sm font-medium">수업명</label>
-                        <input type="text" name="className" value={formData.className} onChange={handleChange} className="mt-1 w-full border border-gray-300 rounded-md py-2 px-3" required />
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">수업명</label>
+                        <input type="text" name="className" value={formData.className} onChange={handleChange} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" required />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium">요일</label>
-                            <select name="dayOfWeek" value={formData.dayOfWeek} onChange={handleChange} className="mt-1 w-full border border-gray-300 rounded-md py-2 px-3">
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">요일</label>
+                            <select name="dayOfWeek" value={formData.dayOfWeek} onChange={handleChange} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
                                 {DAYS.map((day, i) => <option key={i} value={i+1}>{day}</option>)}
                             </select>
                         </div>
                          <div>
-                            <label className="block text-sm font-medium">색상</label>
-                            <select name="color" value={formData.color} onChange={handleChange} className="mt-1 w-full border border-gray-300 rounded-md py-2 px-3">
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">색상</label>
+                            <select name="color" value={formData.color} onChange={handleChange} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
                                 {Object.entries(CLASS_COLORS).map(([key, {name}]) => <option key={key} value={key}>{name}</option>)}
                             </select>
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium">시작 시간</label>
-                            <input type="time" name="startTime" value={formData.startTime} onChange={handleChange} className="mt-1 w-full border border-gray-300 rounded-md py-2 px-3" required />
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">시작 시간</label>
+                            <input type="time" name="startTime" value={formData.startTime} onChange={handleChange} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" required />
                         </div>
                          <div>
-                            <label className="block text-sm font-medium">종료 시간</label>
-                            <input type="time" name="endTime" value={formData.endTime} onChange={handleChange} className="mt-1 w-full border border-gray-300 rounded-md py-2 px-3" required />
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">종료 시간</label>
+                            <input type="time" name="endTime" value={formData.endTime} onChange={handleChange} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" required />
                         </div>
                     </div>
-                    <div className="flex justify-between pt-4">
-                        <div>
-                            {!isNew && <button type="button" onClick={() => onDelete(formData.id)} className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">삭제</button>}
-                        </div>
-                        <div className="flex justify-end">
-                            <button type="button" onClick={onClose} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md mr-2 hover:bg-gray-300">취소</button>
-                            <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">저장</button>
-                        </div>
+                    <div className="flex gap-3 pt-4">
+                        {!isNew && (
+                            <button 
+                                type="button" 
+                                onClick={() => window.confirm('수업을 삭제하시겠습니까?') && onDelete(formData.id)} 
+                                className="px-6 py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold hover:bg-rose-100 transition-all border border-rose-100"
+                            >
+                                삭제
+                            </button>
+                        )}
+                        <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100">
+                            저장 완료
+                        </button>
                     </div>
                 </form>
             </div>

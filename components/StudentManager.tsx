@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import dayjs from 'dayjs';
 import { Student, Membership, PassType } from '../types';
 import { PASS_OPTIONS, PASS_PRICES } from '../constants';
 import { CloseIcon, UploadIcon, DownloadIcon } from './icons';
@@ -21,6 +22,12 @@ interface StudentManagerProps {
     upgradeMembership: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
 }
 
+const formatDate = (dateStr: string | undefined) => {
+    if (!dateStr) return '-';
+    const d = dayjs(dateStr);
+    return d.isValid() ? d.format('YYYY-MM-DD') : '-';
+};
+
 const AddStudentModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -30,8 +37,8 @@ const AddStudentModal: React.FC<{
     const [phone, setPhone] = useState('');
     const [remarks, setRemarks] = useState('');
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
-    const [startDate, setStartDate] = useState(new Date().toISOString()?.split('T')[0]);
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString()?.split('T')[0]);
+    const [startDate, setStartDate] = useState(dayjs().format('YYYY-MM-DD'));
+    const [paymentDate, setPaymentDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
 
@@ -43,8 +50,8 @@ const AddStudentModal: React.FC<{
             setPhone('');
             setRemarks('');
             setPassType(PassType.MONTHLY_3_PER_WEEK);
-            setStartDate(new Date().toISOString()?.split('T')[0]);
-            setPaymentDate(new Date().toISOString()?.split('T')[0]);
+            setStartDate(dayjs().format('YYYY-MM-DD'));
+            setPaymentDate(dayjs().format('YYYY-MM-DD'));
             setPaymentMethod('카드');
             setCashReceiptIssued(false);
             onClose();
@@ -132,17 +139,18 @@ const ReregisterForm: React.FC<{
 }> = ({ student, latestMembership, onAddMembership, onCancel }) => {
 
     const getDefaultStartDate = () => {
-        if (latestMembership) {
-            const nextDay = new Date(latestMembership.endDate);
-            nextDay.setDate(nextDay.getDate() + 1);
-            return nextDay.toISOString()?.split('T')[0];
+        if (latestMembership && latestMembership.endDate) {
+            const nextDay = dayjs(latestMembership.endDate).add(1, 'day');
+            if (nextDay.isValid()) {
+                return nextDay.format('YYYY-MM-DD');
+            }
         }
-        return new Date().toISOString()?.split('T')[0];
+        return dayjs().format('YYYY-MM-DD');
     };
 
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(getDefaultStartDate());
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString()?.split('T')[0]);
+    const [paymentDate, setPaymentDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
 
@@ -214,8 +222,8 @@ const PastMembershipForm: React.FC<{
     onCancel: () => void;
 }> = ({ student, onAddMembership, onCancel }) => {
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
-    const [startDate, setStartDate] = useState(new Date().toISOString()?.split('T')[0]);
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString()?.split('T')[0]);
+    const [startDate, setStartDate] = useState(dayjs().format('YYYY-MM-DD'));
+    const [paymentDate, setPaymentDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
     const [customPrice, setCustomPrice] = useState<string>(String(PASS_PRICES[PassType.MONTHLY_3_PER_WEEK]));
@@ -303,7 +311,7 @@ const UpgradeForm: React.FC<{
             <h3 className="text-xl font-bold text-emerald-800">이용권 업그레이드</h3>
             <div className="p-3 bg-white rounded border border-emerald-100 mb-4">
                  <p className="text-sm text-gray-600">현재 이용권: <span className="font-semibold">{currentMembership.passType}</span> ({currentPrice.toLocaleString()}원)</p>
-                 <p className="text-sm text-gray-600">기존 시작일: {new Date(currentMembership.startDate).toLocaleDateString('ko-KR')}</p>
+                 <p className="text-sm text-gray-600">기존 시작일: {formatDate(currentMembership.startDate)}</p>
             </div>
             
             <div>
@@ -348,30 +356,25 @@ const UpgradeForm: React.FC<{
 const getStatus = (membership: Membership | undefined): { text: string; color: string; dotColor: string } => {
     if (!membership) return { text: '이용권 없음', color: 'bg-gray-100 text-gray-600', dotColor: 'bg-gray-400' };
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const start = new Date(membership.startDate);
-    start.setHours(0, 0, 0, 0);
+    const today = dayjs().startOf('day');
+    const start = dayjs(membership.startDate).startOf('day');
 
-    if (start > today) {
-        const diffDays = Math.ceil((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (start.isAfter(today)) {
+        const diffDays = start.diff(today, 'day');
         return { text: `시작 ${diffDays}일 전`, color: 'bg-blue-50 text-blue-700 border-blue-100', dotColor: 'bg-blue-500' };
     }
 
     if (membership.holdStartDate && membership.holdEndDate) {
-        const holdStart = new Date(membership.holdStartDate);
-        holdStart.setHours(0, 0, 0, 0);
-        const holdEnd = new Date(membership.holdEndDate);
-        holdEnd.setHours(0, 0, 0, 0);
+        const holdStart = dayjs(membership.holdStartDate).startOf('day');
+        const holdEnd = dayjs(membership.holdEndDate).startOf('day');
         
-        if (today >= holdStart && today <= holdEnd) {
+        if ((today.isAfter(holdStart) || today.isSame(holdStart)) && (today.isBefore(holdEnd) || today.isSame(holdEnd))) {
             return { text: '홀딩중', color: 'bg-amber-50 text-amber-700 border-amber-100', dotColor: 'bg-amber-500' };
         }
     }
 
-    const end = new Date(membership.endDate);
-    end.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const end = dayjs(membership.endDate).startOf('day');
+    const diffDays = end.diff(today, 'day');
 
     if (diffDays < 0) return { text: '만료됨', color: 'bg-rose-50 text-rose-700 border-rose-100', dotColor: 'bg-rose-500' };
     if (diffDays <= 7) return { text: `${diffDays + 1}일 남음`, color: 'bg-orange-50 text-orange-700 border-orange-100', dotColor: 'bg-orange-500' };
@@ -425,9 +428,13 @@ const StudentDetailModal: React.FC<{
             if (paymentMethod !== membership.paymentMethod) membershipData.paymentMethod = paymentMethod;
             if (cashReceiptIssued !== (membership.cashReceiptIssued || false)) membershipData.cashReceiptIssued = cashReceiptIssued;
             
-            if (holdStart && holdEnd && new Date(holdEnd) >= new Date(holdStart)) {
-                membershipData.holdStartDate = holdStart;
-                membershipData.holdEndDate = holdEnd;
+            if (holdStart && holdEnd) {
+                const hs = dayjs(holdStart);
+                const he = dayjs(holdEnd);
+                if (hs.isValid() && he.isValid() && (he.isAfter(hs) || he.isSame(hs))) {
+                    membershipData.holdStartDate = holdStart;
+                    membershipData.holdEndDate = holdEnd;
+                }
             }
             onSave(student.id, membership.id, studentData, membershipData);
         } else {
@@ -448,7 +455,12 @@ const StudentDetailModal: React.FC<{
 
     // Check if membership is active for upgrade eligibility
     // A membership is active if its end date is in the future or today.
-    const isMembershipActive = membership && new Date(membership.endDate) >= new Date(new Date().setHours(0,0,0,0));
+    const isMembershipActive = useMemo(() => {
+        if (!membership || !membership.endDate) return false;
+        const today = dayjs().startOf('day');
+        const end = dayjs(membership.endDate).startOf('day');
+        return end.isValid() && (end.isAfter(today) || end.isSame(today));
+    }, [membership]);
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
@@ -489,7 +501,7 @@ const StudentDetailModal: React.FC<{
                                                 <div className="text-gray-500 flex flex-col">
                                                     <span className="text-[10px] text-gray-400 uppercase font-semibold">이용 기간</span>
                                                     <span className="font-medium text-gray-700">
-                                                        {new Date(m.startDate).toLocaleDateString('ko-KR')} ~ {new Date(m.endDate).toLocaleDateString('ko-KR')}
+                                                        {formatDate(m.startDate)} ~ {formatDate(m.endDate)}
                                                     </span>
                                                 </div>
                                                 <div className="text-gray-500 flex flex-col text-right">
@@ -502,7 +514,7 @@ const StudentDetailModal: React.FC<{
                                                     <div className="col-span-2 mt-1 p-2 bg-amber-50 rounded-lg border border-amber-100 flex items-center gap-2">
                                                         <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">HOLD</span>
                                                         <span className="text-xs text-amber-800 font-medium">
-                                                            {new Date(m.holdStartDate).toLocaleDateString('ko-KR')} ~ {m.holdEndDate ? new Date(m.holdEndDate).toLocaleDateString('ko-KR') : ''}
+                                                            {formatDate(m.holdStartDate)} ~ {m.holdEndDate ? formatDate(m.holdEndDate) : ''}
                                                         </span>
                                                     </div>
                                                 )}
@@ -634,7 +646,7 @@ const StudentDetailModal: React.FC<{
                                     <h3 className="text-lg font-semibold mb-2 text-gray-700">이용권 홀딩</h3>
                                     {/* ... hold fields ... */}
                                     <p className="text-sm text-gray-500 mb-3">홀딩 기간을 설정하면 이용권 만료일이 자동으로 연장됩니다.</p>
-                                    {membership.holdStartDate && <p className="text-sm text-blue-600 mb-3">현재 홀딩: {new Date(membership.holdStartDate).toLocaleDateString('ko-KR')} ~ {membership.holdEndDate ? new Date(membership.holdEndDate).toLocaleDateString('ko-KR') : ''}</p>}
+                                    {membership.holdStartDate && <p className="text-sm text-blue-600 mb-3">현재 홀딩: {formatDate(membership.holdStartDate)} ~ {membership.holdEndDate ? formatDate(membership.holdEndDate) : ''}</p>}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label htmlFor="hold-start" className="block text-sm font-medium text-gray-700">홀딩 시작일</label>
@@ -772,16 +784,13 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                     return { ...student, membership: undefined, combinedEndDate: undefined };
                 }
 
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
+                const today = dayjs().startOf('day');
 
                 // 1. Find a membership that is currently active.
                 const currentMembership = studentMemberships.find(m => {
-                    const startDate = new Date(m.startDate);
-                    startDate.setHours(0, 0, 0, 0);
-                    const endDate = new Date(m.endDate);
-                    endDate.setHours(0, 0, 0, 0);
-                    return startDate <= today && endDate >= today;
+                    const startDate = dayjs(m.startDate).startOf('day');
+                    const endDate = dayjs(m.endDate).startOf('day');
+                    return (startDate.isBefore(today) || startDate.isSame(today)) && (endDate.isAfter(today) || endDate.isSame(today));
                 });
 
                 let representativeMembership: Membership | undefined;
@@ -792,11 +801,10 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                     // 2. If no current, find the one that starts soonest in the future.
                     const future = studentMemberships
                         .filter(m => {
-                             const d = new Date(m.startDate);
-                             d.setHours(0,0,0,0);
-                             return d > today;
+                             const d = dayjs(m.startDate).startOf('day');
+                             return d.isAfter(today);
                         })
-                        .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+                        .sort((a, b) => dayjs(a.startDate).valueOf() - dayjs(b.startDate).valueOf());
 
                     if (future.length > 0) {
                         representativeMembership = future[0];
@@ -804,17 +812,16 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                         // 3. If no current or future, find the one that expired most recently.
                         const past = studentMemberships
                             .filter(m => {
-                                const d = new Date(m.endDate);
-                                d.setHours(0,0,0,0);
-                                return d < today;
+                                const d = dayjs(m.endDate).startOf('day');
+                                return d.isBefore(today);
                             })
-                            .sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime());
+                            .sort((a, b) => dayjs(b.endDate).valueOf() - dayjs(a.endDate).valueOf());
 
                         if (past.length > 0) {
                             representativeMembership = past[0];
                         } else {
                             // Fallback: just take the one that ends last
-                            representativeMembership = [...studentMemberships].sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
+                            representativeMembership = [...studentMemberships].sort((a, b) => dayjs(b.endDate).valueOf() - dayjs(a.endDate).valueOf())[0];
                         }
                     }
                 }
@@ -822,21 +829,20 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                 // Calculate combined end date from all non-expired memberships
                 let combinedEndDate: string | undefined;
                 const nonExpiredMemberships = studentMemberships.filter(m => {
-                    const d = new Date(m.endDate);
-                    d.setHours(0,0,0,0);
-                    return d >= today;
+                    const d = dayjs(m.endDate).startOf('day');
+                    return d.isAfter(today) || d.isSame(today);
                 });
 
                 if (nonExpiredMemberships.length > 0) {
                     const latestEndDate = nonExpiredMemberships.reduce((latest, current) => {
-                        return new Date(current.endDate) > new Date(latest) ? current.endDate : latest;
+                        return dayjs(current.endDate).isAfter(dayjs(latest)) ? current.endDate : latest;
                     }, nonExpiredMemberships[0].endDate);
                     combinedEndDate = latestEndDate;
                 }
 
                 return { ...student, membership: representativeMembership, combinedEndDate };
             })
-            .filter(student => student.name.toLowerCase().includes(searchTerm.toLowerCase()))
+            .filter(student => (student.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()))
             .sort((a, b) => a.name.localeCompare(b.name));
     }, [students, memberships, searchTerm]);
     
@@ -846,7 +852,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
         if (!student) return null;
         const studentMemberships = memberships
             .filter(m => m.studentId === selectedStudentId)
-            .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+            .sort((a, b) => dayjs(b.startDate).valueOf() - dayjs(a.startDate).valueOf());
         return { student, allMemberships: studentMemberships, latestMembership: studentMemberships[0] };
     }, [selectedStudentId, students, memberships]);
 
@@ -925,7 +931,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        const today = new Date().toISOString().split('T')[0];
+        const today = dayjs().format('YYYY-MM-DD');
         link.setAttribute('download', `yogao_students_${today}.csv`);
         document.body.appendChild(link);
         link.click();
@@ -1015,7 +1021,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                     }
 
                     ['student_registrationDate', 'membership_startDate', 'membership_endDate', 'membership_holdStartDate', 'membership_holdEndDate', 'membership_paymentDate'].forEach(dateKey => {
-                        if (rowObj[dateKey] && isNaN(new Date(rowObj[dateKey]).getTime())) {
+                        if (rowObj[dateKey] && !dayjs(rowObj[dateKey]).isValid()) {
                             const koreanHeader = Object.keys(koreanToEnglishMap).find(k => koreanToEnglishMap[k] === dateKey);
                             errorLogs.push(`줄 ${rowIndexForError}: '${koreanHeader}'의 날짜 형식이 올바르지 않습니다.`);
                             isValid = false;
@@ -1124,7 +1130,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                                     </td>
                                     <td className="px-6 py-4 text-gray-600 truncate" title={s.remarks || '-'}>{s.remarks || '-'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap truncate" title={s.membership?.passType || 'N/A'}>{s.membership?.passType || 'N/A'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{s.membership ? `${new Date(s.membership.startDate).toLocaleDateString('ko-KR')} ~ ${new Date(s.combinedEndDate || s.membership.endDate).toLocaleDateString('ko-KR')}` : 'N/A'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{s.membership ? `${formatDate(s.membership.startDate)} ~ ${formatDate(s.combinedEndDate || s.membership.endDate)}` : 'N/A'}</td>
                                     <td className="px-6 py-4">
                                         <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${status.color}`}>
                                             <span className={`w-1.5 h-1.5 rounded-full ${status.dotColor}`}></span>

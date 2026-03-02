@@ -19,6 +19,7 @@ export interface Student {
   phone: string;
   registrationDate: string; // ISO string
   remarks?: string;
+  memo?: string;
 }
 
 export interface Membership {
@@ -28,6 +29,8 @@ export interface Membership {
   startDate: string; // ISO string
   endDate: string; // ISO string
   price: number;
+  discountAmount?: number;
+  refundAmount?: number;
   paymentDate?: string; // ISO string
   holdStartDate?: string;
   holdEndDate?: string;
@@ -38,6 +41,9 @@ export interface Membership {
 export interface AttendanceRecord {
   id: string;
   studentId: string;
+  studentName?: string;
+  studentPhone?: string;
+  classId?: string;
   date: string; // YYYY-MM-DD
   classTime: string; // "HH:mm - ClassName"
 }
@@ -69,4 +75,4 @@ export interface ClassSchedule {
 }
 
 
-export type ViewType = 'dashboard' | 'students' | 'schedule' | 'expenses' | 'financials';
+export type ViewType = 'dashboard' | 'active_members' | 'memberships' | 'schedule' | 'expenses';

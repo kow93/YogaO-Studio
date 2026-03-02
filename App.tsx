@@ -4,38 +4,66 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule } from './types';
 import { PASS_PRICES, PASS_DURATIONS, DEFAULT_SCHEDULE } from './constants';
 import { Dashboard } from './components/Dashboard';
-import { StudentManager } from './components/StudentManager';
 import { ScheduleManager } from './components/ScheduleManager';
 import { ExpenseManager } from './components/ExpenseManager';
-import { FinancialReport } from './components/FinancialReport';
+import { ActiveMemberManager } from './components/ActiveMemberManager';
+import { MembershipHistoryManager } from './components/MembershipHistoryManager';
 import { DashboardIcon, StudentsIcon, AttendanceIcon, ExpenseIcon, FinancialsIcon } from './components/icons';
 
-const calculateEndDate = (startDate: Date, passType: PassType): Date => {
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const parseAmount = (val: any): number => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const parsed = parseInt(String(val).replace(/[^0-9-]/g, ''), 10);
+    return isNaN(parsed) ? 0 : parsed;
+};
+
+const parseDate = (val: any): string => {
+    if (!val) return dayjs().toISOString();
+    const d = dayjs(val);
+    return d.isValid() ? d.toISOString() : dayjs().toISOString();
+};
+
+const formatPhone = (val: any): string => {
+    if (!val) return '';
+    let str = String(val).trim();
+    // Ensure it starts with 0 if it's a valid Korean mobile number format but missing leading 0
+    if (str.length === 10 && (str.startsWith('10') || str.startsWith('11'))) {
+        str = '0' + str;
+    }
+    return str;
+};
+
+const calculateEndDate = (startDate: Date | string, passType: PassType): Date => {
     const duration = PASS_DURATIONS[passType];
-    const end = new Date(startDate);
+    let end = dayjs(startDate);
 
     if (duration.unit === 'month') {
         const monthsToAdd = duration.value;
-        const originalDay = end.getDate();
+        const originalDay = end.date();
         
         // Add months
-        end.setMonth(end.getMonth() + monthsToAdd);
+        end = end.add(monthsToAdd, 'month');
         
-        // Handle month overflow (e.g. Jan 31 -> Feb 28)
-        if (end.getDate() !== originalDay) {
-            end.setDate(0);
-        }
-
+        // Handle month overflow (dayjs handles this by default, but let's be explicit if needed)
+        // Actually dayjs.add(1, 'month') on Jan 31 results in Feb 28/29.
+        
         // Calculate days to subtract based on rule:
-        // 1~3 months (floor(m/3)=0 or 1) -> -1 day (max(1, 0~1) = 1)
-        // 6 months (floor(6/3)=2) -> -2 days (max(1, 2) = 2)
+        // 1~3 months -> -1 day
+        // 6 months -> -2 days
         const daysToSubtract = Math.max(1, Math.floor(monthsToAdd / 3));
-        end.setDate(end.getDate() - daysToSubtract);
+        end = end.subtract(daysToSubtract, 'day');
     } else {
         // Day based
-        end.setDate(end.getDate() + duration.value - 1);
+        end = end.add(duration.value - 1, 'day');
     }
-    return end;
+    return end.toDate();
 };
 
 const App: React.FC = () => {
@@ -45,7 +73,7 @@ const App: React.FC = () => {
     const [memberships, setMemberships] = useState<Membership[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
-    const [schedule, setSchedule] = useLocalStorage<ClassSchedule[]>('schedule', DEFAULT_SCHEDULE);
+    const [schedule, setSchedule] = useState<ClassSchedule[]>(DEFAULT_SCHEDULE);
 
     const supabase = (window as any)._supabase;
 
@@ -56,29 +84,94 @@ const App: React.FC = () => {
                 { data: studentsData },
                 { data: membershipsData },
                 { data: attendanceData },
-                { data: expensesData }
+                { data: expensesData },
+                { data: classesData }
             ] = await Promise.all([
                 supabase.from('students').select('*'),
                 supabase.from('membership').select('*'),
-                supabase.from('attendance').select('*'),
-                supabase.from('expense').select('*')
+                supabase.from('attendance').select('*, students(name)'),
+                supabase.from('expense').select('*'),
+                supabase.from('classes').select('*')
             ]);
             
             if (studentsData) setStudents(studentsData);
-            if (membershipsData) setMemberships(membershipsData);
-            if (attendanceData) setAttendance(attendanceData);
-            if (expensesData) setExpenses(expensesData);
+            if (membershipsData) {
+                const mapped = membershipsData.map((m: any) => ({
+                    id: m.id,
+                    studentId: m.student_id || m.studentId,
+                    passType: m.pass_type || m.passType,
+                    startDate: m.start_date || m.startDate,
+                    endDate: m.end_date || m.endDate,
+                    price: m.price,
+                    discountAmount: m.discount_amount || m.discountAmount,
+                    refundAmount: m.refund_amount || m.refundAmount,
+                    paymentDate: m.payment_date || m.paymentDate,
+                    holdStartDate: m.hold_start_date || m.holdStartDate,
+                    holdEndDate: m.hold_end_date || m.holdEndDate,
+                    paymentMethod: m.payment_method || m.paymentMethod,
+                    cashReceiptIssued: m.cash_receipt_issued || m.cashReceiptIssued,
+                }));
+                setMemberships(mapped);
+            }
+            if (attendanceData) {
+                const mapped = attendanceData.map((a: any) => ({
+                    id: a.id,
+                    studentId: a.student_id || a.studentId,
+                    studentName: a['이름'] || a.studentName || a.students?.name,
+                    studentPhone: a['연락처'] || a.studentPhone,
+                    classId: a.class_id || a.classId,
+                    date: a['출석 날짜'] || a.date,
+                    classTime: a['수업 시간 정보'] || a.classTime,
+                }));
+                setAttendance(mapped);
+            }
+            if (expensesData) {
+                const mappedExpenses = expensesData.map((e: any) => ({
+                    id: e.id,
+                    date: e.날짜 || e.date,
+                    category: e.분류 || e.category,
+                    description: e.내용 || e.description,
+                    amount: typeof (e.금액 || e.amount) === 'string' 
+                        ? Number((e.금액 || e.amount).replace(/[^0-9.-]+/g,"")) 
+                        : Number(e.금액 || e.amount)
+                }));
+                setExpenses(mappedExpenses);
+            }
+            if (classesData) {
+                const mappedClasses = classesData.map((c: any) => ({
+                    id: c.id,
+                    dayOfWeek: c.day_of_week || c.dayOfWeek,
+                    startTime: c.start_time || c.startTime,
+                    endTime: c.end_time || c.endTime,
+                    className: c.class_name || c.className,
+                    color: c.color
+                }));
+                setSchedule(mappedClasses);
+            }
         };
         fetchData();
     }, [supabase]);
 
-    const addStudent = useCallback(async (studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDateStr: string, paymentDateStr: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
+    const addStudent = useCallback(async (
+        studentData: Omit<Student, 'id' | 'registrationDate'>, 
+        passType: PassType, 
+        startDateStr: string, 
+        paymentDateStr: string, 
+        paymentMethod: '카드' | '현금', 
+        cashReceiptIssued: boolean,
+        discountAmount: number = 0
+    ) => {
         const studentId = crypto.randomUUID();
-        const registrationDate = new Date().toISOString();
-        const newStudent: Student = { ...studentData, id: studentId, registrationDate };
+        const registrationDate = dayjs().toISOString();
+        const newStudent: Student = { 
+            ...studentData, 
+            phone: formatPhone(studentData.phone),
+            id: studentId, 
+            registrationDate 
+        };
         
-        const startDate = new Date(startDateStr);
-        const endDate = calculateEndDate(startDate, passType);
+        const startDate = dayjs(parseDate(startDateStr));
+        const endDate = dayjs(calculateEndDate(startDate.toDate(), passType));
 
         const newMembership: Membership = {
             id: crypto.randomUUID(),
@@ -86,8 +179,9 @@ const App: React.FC = () => {
             passType,
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
-            price: PASS_PRICES[passType],
-            paymentDate: new Date(paymentDateStr).toISOString(),
+            price: PASS_PRICES[passType] - discountAmount,
+            discountAmount,
+            paymentDate: dayjs(parseDate(paymentDateStr)).toISOString(),
             paymentMethod,
             cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
         };
@@ -97,7 +191,18 @@ const App: React.FC = () => {
 
         if (supabase) {
             await supabase.from('students').insert([newStudent]);
-            await supabase.from('membership').insert([newMembership]);
+            await supabase.from('membership').insert([{
+                id: newMembership.id,
+                student_id: newMembership.studentId,
+                pass_type: newMembership.passType,
+                start_date: newMembership.startDate,
+                end_date: newMembership.endDate,
+                price: newMembership.price,
+                discount_amount: newMembership.discountAmount,
+                payment_date: newMembership.paymentDate,
+                payment_method: newMembership.paymentMethod,
+                cash_receipt_issued: newMembership.cashReceiptIssued
+            }]);
         }
     }, [supabase]);
 
@@ -108,15 +213,16 @@ const App: React.FC = () => {
         paymentDateStr: string, 
         paymentMethod: '카드' | '현금', 
         cashReceiptIssued: boolean,
-        customPrice?: number
+        customPrice?: number,
+        discountAmount: number = 0
     ) => {
-        const startDate = new Date(startDateStr);
-        const endDate = calculateEndDate(startDate, passType);
+        const startDate = dayjs(parseDate(startDateStr));
+        const endDate = dayjs(calculateEndDate(startDate.toDate(), passType));
 
-        let price = customPrice !== undefined ? customPrice : PASS_PRICES[passType];
+        let price = customPrice !== undefined ? parseAmount(customPrice) : PASS_PRICES[passType];
         
         const studentMemberships = memberships.filter(m => m.studentId === studentId);
-        const lastMembership = studentMemberships.sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
+        const lastMembership = studentMemberships.sort((a, b) => dayjs(b.endDate).valueOf() - dayjs(a.endDate).valueOf())[0];
 
         if (customPrice === undefined) {
             const isNewPassShortTerm = passType === PassType.ONE_DAY || passType === PassType.ONE_WEEK;
@@ -127,14 +233,17 @@ const App: React.FC = () => {
             }
         }
 
+        const finalPrice = price - discountAmount;
+
         const newMembership: Membership = {
             id: crypto.randomUUID(),
             studentId,
             passType,
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
-            price: price,
-            paymentDate: new Date(paymentDateStr).toISOString(),
+            price: finalPrice,
+            discountAmount,
+            paymentDate: dayjs(parseDate(paymentDateStr)).toISOString(),
             paymentMethod,
             cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
         };
@@ -142,7 +251,18 @@ const App: React.FC = () => {
         setMemberships(prev => [...prev, newMembership]);
 
         if (supabase) {
-            await supabase.from('membership').insert([newMembership]);
+            await supabase.from('membership').insert([{
+                id: newMembership.id,
+                student_id: newMembership.studentId,
+                pass_type: newMembership.passType,
+                start_date: newMembership.startDate,
+                end_date: newMembership.endDate,
+                price: newMembership.price,
+                discount_amount: newMembership.discountAmount,
+                payment_date: newMembership.paymentDate,
+                payment_method: newMembership.paymentMethod,
+                cash_receipt_issued: newMembership.cashReceiptIssued
+            }]);
         }
     }, [memberships, supabase]);
 
@@ -449,23 +569,46 @@ const App: React.FC = () => {
         }
    }, [supabase]);
 
-    const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string) => {
-        const exists = attendance.find(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
+    const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string) => {
+        const exists = attendance.find(a => {
+            if (classId && a.classId) {
+                return a.studentId === studentId && a.date === date && a.classId === classId;
+            }
+            return a.studentId === studentId && a.date === date && a.classTime === classTime;
+        });
+
         if (exists) {
             setAttendance(prev => prev.filter(a => a.id !== exists.id));
             if (supabase) {
                 await supabase.from('attendance').delete().eq('id', exists.id);
             }
         } else {
-            const newRecord = { id: crypto.randomUUID(), studentId, date, classTime };
+            const student = students.find(s => s.id === studentId);
+            const newRecord = { 
+                id: crypto.randomUUID(), 
+                studentId, 
+                date, 
+                classTime, 
+                classId,
+                studentName: student?.name,
+                studentPhone: student?.phone
+            };
             setAttendance(prev => [...prev, newRecord]);
             if (supabase) {
-                await supabase.from('attendance').insert([newRecord]);
+                await supabase.from('attendance').insert([{
+                    id: newRecord.id,
+                    student_id: newRecord.studentId,
+                    '출석 날짜': newRecord.date,
+                    '수업 시간 정보': newRecord.classTime,
+                    class_id: newRecord.classId,
+                    '이름': newRecord.studentName,
+                    '연락처': newRecord.studentPhone
+                }]);
             }
         }
-    }, [attendance, supabase]);
+    }, [attendance, supabase, students]);
 
-    const addOrUpdateSchedule = useCallback((classData: ClassSchedule) => {
+    const addOrUpdateSchedule = useCallback(async (classData: ClassSchedule) => {
         setSchedule(prev => {
             const exists = prev.some(c => c.id === classData.id);
             if (exists) {
@@ -473,17 +616,46 @@ const App: React.FC = () => {
             }
             return [...prev, classData];
         });
-    }, [setSchedule]);
 
-    const deleteSchedule = useCallback((classId: string) => {
+        if (supabase) {
+            const { error } = await supabase.from('classes').upsert({
+                id: classData.id,
+                day_of_week: classData.dayOfWeek,
+                start_time: classData.startTime,
+                end_time: classData.endTime,
+                class_name: classData.className,
+                color: classData.color
+            });
+            if (error) console.error('Error updating schedule:', error);
+        }
+    }, [supabase]);
+
+    const deleteSchedule = useCallback(async (classId: string) => {
         setSchedule(prev => prev.filter(c => c.id !== classId));
-    }, [setSchedule]);
+        if (supabase) {
+            const { error } = await supabase.from('classes').delete().eq('id', classId);
+            if (error) console.error('Error deleting schedule:', error);
+        }
+    }, [supabase]);
+
+    const updateStudent = useCallback(async (studentId: string, updates: Partial<Student>) => {
+        setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updates } : s));
+        if (supabase) {
+            await supabase.from('students').update(updates).eq('id', studentId);
+        }
+    }, [supabase]);
 
     const addExpense = useCallback(async (expense: Omit<Expense, 'id'>) => {
         const newExpense = { ...expense, id: crypto.randomUUID() };
         setExpenses(prev => [...prev, newExpense]);
         if (supabase) {
-            await supabase.from('expense').insert([newExpense]);
+            await supabase.from('expense').insert([{
+                id: newExpense.id,
+                날짜: newExpense.date,
+                분류: newExpense.category,
+                내용: newExpense.description,
+                금액: newExpense.amount
+            }]);
         }
     }, [supabase]);
 
@@ -494,21 +666,33 @@ const App: React.FC = () => {
         }
     }, [supabase]);
 
+    const refundMembership = useCallback(async (membershipId: string, refundAmount: number) => {
+        const amount = parseAmount(refundAmount);
+        setMemberships(prev => prev.map(m => m.id === membershipId ? { ...m, refundAmount: amount } : m));
+        if (supabase) {
+            await supabase.from('membership').update({ refund_amount: amount }).eq('id', membershipId);
+        }
+        alert("환불 처리가 완료되었습니다.");
+    }, [supabase]);
+
     const renderContent = () => {
         switch (view) {
             case 'dashboard':
                 return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} schedule={schedule} />;
-            case 'students':
-                return <StudentManager 
+            case 'active_members':
+                return <ActiveMemberManager 
                     students={students} 
                     memberships={memberships} 
-                    addStudent={addStudent} 
-                    addMembership={addMembership} 
-                    deleteStudent={deleteStudent}
-                    updateStudentAndMembership={updateStudentAndMembership}
-                    bulkExtendMemberships={bulkExtendMemberships}
-                    importStudentsAndMemberships={importStudentsAndMemberships}
-                    upgradeMembership={upgradeMembership}
+                    attendance={attendance} 
+                    updateStudent={updateStudent}
+                />;
+            case 'memberships':
+                return <MembershipHistoryManager 
+                    students={students} 
+                    memberships={memberships} 
+                    addStudent={addStudent}
+                    addMembership={addMembership}
+                    refundMembership={refundMembership}
                 />;
             case 'schedule':
                 return <ScheduleManager 
@@ -523,67 +707,67 @@ const App: React.FC = () => {
                 />;
             case 'expenses':
                 return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} importExpenses={importExpenses} />;
-            case 'financials':
-                return <FinancialReport memberships={memberships} expenses={expenses} students={students} />;
             default:
                 return <div>Unknown View</div>;
         }
     };
 
     return (
-        <div className="flex h-screen bg-gray-100 font-sans">
+        <div className="flex h-screen bg-gray-50 font-sans">
             {/* Sidebar */}
-            <div className="w-64 bg-white shadow-lg flex-shrink-0 flex flex-col">
-                <div className="p-6 border-b">
+            <div className="w-64 bg-white border-r border-gray-200 flex-shrink-0 flex flex-col">
+                <div className="p-6 border-b border-gray-100">
                     <h1 className="text-2xl font-bold text-indigo-600 flex items-center gap-2">
                         <span>🧘‍♀️</span> Yogao
                     </h1>
-                    <p className="text-xs text-gray-500 mt-1">Studio Manager</p>
+                    <p className="text-[10px] uppercase tracking-widest text-gray-400 mt-1 font-semibold">Business Manager</p>
                 </div>
-                <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+                <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
                     <button
                         onClick={() => setView('dashboard')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'dashboard' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${view === 'dashboard' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
                     >
                         <DashboardIcon className="w-5 h-5" />
-                        <span>대시보드</span>
+                        <span className="font-medium">대시보드</span>
                     </button>
+                    <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">회원 및 이용권</div>
                     <button
-                        onClick={() => setView('students')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'students' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                        onClick={() => setView('active_members')}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${view === 'active_members' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
                     >
                         <StudentsIcon className="w-5 h-5" />
-                        <span>회원 관리</span>
+                        <span className="font-medium">유효 회원 관리</span>
                     </button>
                     <button
+                        onClick={() => setView('memberships')}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${view === 'memberships' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
+                    >
+                        <FinancialsIcon className="w-5 h-5" />
+                        <span className="font-medium">멤버십(결제) 관리</span>
+                    </button>
+                    <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">운영 도구</div>
+                    <button
                         onClick={() => setView('schedule')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'schedule' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${view === 'schedule' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
                     >
                         <AttendanceIcon className="w-5 h-5" />
-                        <span>시간표 & 출결</span>
+                        <span className="font-medium">시간표 & 출결</span>
                     </button>
                     <button
                         onClick={() => setView('expenses')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'expenses' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${view === 'expenses' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
                     >
                         <ExpenseIcon className="w-5 h-5" />
-                        <span>가계부 (지출)</span>
-                    </button>
-                    <button
-                        onClick={() => setView('financials')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'financials' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
-                    >
-                        <FinancialsIcon className="w-5 h-5" />
-                        <span>재무 리포트</span>
+                        <span className="font-medium">지출 관리</span>
                     </button>
                 </nav>
-                <div className="p-4 border-t text-xs text-center text-gray-400">
+                <div className="p-6 border-t border-gray-100 text-[10px] text-center text-gray-400 font-medium">
                     &copy; 2024 Yogao Studio
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto bg-gray-50">
                 <div className="p-8 max-w-7xl mx-auto">
                     {renderContent()}
                 </div>

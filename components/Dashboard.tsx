@@ -1,8 +1,11 @@
 
-import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import React, { useMemo } from 'react';
+import dayjs from 'dayjs';
+import { 
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+    LineChart, Line, PieChart, Pie, Cell 
+} from 'recharts';
 import { Student, Membership, Expense, AttendanceRecord, ClassSchedule } from '../types';
-import { AttendanceAnalytics } from './AttendanceAnalytics';
 
 interface DashboardProps {
     students: Student[];
@@ -12,268 +15,240 @@ interface DashboardProps {
     schedule: ClassSchedule[];
 }
 
-const StatCard: React.FC<{ title: string; value: string | number; description: string }> = ({ title, value, description }) => (
-    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-        <h3 className="text-sm font-medium text-gray-500">{title}</h3>
-        <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
-        <p className="mt-1 text-sm text-gray-500">{description}</p>
-    </div>
-);
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, expenses, attendance, schedule }) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('ko-KR').format(amount) + '원';
+};
 
-    const validMembersCount = students.filter(student => {
-        const studentMemberships = memberships.filter(m => m.studentId === student.id);
-        return studentMemberships.some(m => {
-            const endDate = new Date(m.endDate);
-            endDate.setHours(0, 0, 0, 0);
-            return endDate >= today;
-        });
-    }).length;
-
-    const holdingMembersCount = memberships.filter(m => {
-        if (!m.holdStartDate || !m.holdEndDate) return false;
-        const holdStart = new Date(m.holdStartDate);
-        holdStart.setHours(0, 0, 0, 0);
-        const holdEnd = new Date(m.holdEndDate);
-        holdEnd.setHours(0, 0, 0, 0);
-        return today >= holdStart && today <= holdEnd;
-    }).length;
-
-    const totalRevenue = memberships.reduce((acc, m) => acc + m.price, 0);
-    
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-    const membershipsThisMonth = memberships.filter(m => {
-        const paymentDate = new Date(m.paymentDate || m.startDate);
-        return paymentDate >= firstDayOfMonth && paymentDate <= lastDayOfMonth;
-    });
-
-    const studentIdsWhoPaidThisMonth = [...new Set(membershipsThisMonth.map(m => m.studentId))];
-
-    const newMembersThisMonthCount = studentIdsWhoPaidThisMonth.filter(studentId => {
-        const student = students.find(s => s.id === studentId);
-        if (student) {
-            const regDate = new Date(student.registrationDate);
-            return regDate >= firstDayOfMonth && regDate <= lastDayOfMonth;
-        }
-        return false;
-    }).length;
-
-    const reregisteredMembersThisMonthCount = studentIdsWhoPaidThisMonth.filter(studentId => {
-        const student = students.find(s => s.id === studentId);
-        if (student) {
-            const regDate = new Date(student.registrationDate);
-            return regDate < firstDayOfMonth;
-        }
-        return false;
-    }).length;
-
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount);
-    };
-    
-    const expiringIn7Days = memberships
-    .filter(m => {
-        const endDate = new Date(m.endDate);
-        endDate.setHours(0, 0, 0, 0);
-        
-        if (endDate < today) return false;
-        if (m.holdStartDate && m.holdEndDate) {
-             const holdStart = new Date(m.holdStartDate);
-             holdStart.setHours(0, 0, 0, 0);
-             const holdEnd = new Date(m.holdEndDate);
-             holdEnd.setHours(0, 0, 0, 0);
-             if (today >= holdStart && today <= holdEnd) return false;
-        }
-
-        const diffTime = endDate.getTime() - today.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays <= 7;
-    })
-    .map(m => ({
-        ...m,
-        studentName: students.find(s => s.id === m.studentId)?.name || '알 수 없는 회원'
-    }))
-    .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-
-    const handleSendReminder = (studentName: string) => {
-        alert(`${studentName}님에게 재등록 알림 메시지를 보냈습니다. (시뮬레이션)`);
-    };
-
-    const firstDayOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    const lastDayOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-
-    const expiringSoonMembers = memberships
-        .filter(m => {
-            const endDate = new Date(m.endDate);
-            return endDate >= firstDayOfNextMonth && endDate <= lastDayOfNextMonth;
-        })
-        .map(m => {
-            const student = students.find(s => s.id === m.studentId);
-            return {
-                ...m,
-                studentName: student ? student.name : '알 수 없는 회원',
-            };
-        })
-        .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-    
-    const processComparisonData = (period: 'month' | 'year') => {
-        const revenueMap: { [key: string]: number } = {};
-        memberships.forEach(m => {
-            const date = new Date(m.paymentDate || m.startDate);
-            let key = '';
-            if (period === 'month') {
-                key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-            } else { // year
-                key = date.getFullYear().toString();
-            }
-            revenueMap[key] = (revenueMap[key] || 0) + m.price;
-        });
-
-        const expenseMap: { [key: string]: number } = {};
-        expenses.forEach(e => {
-            const date = new Date(e.date);
-            let key = '';
-            if (period === 'month') {
-                key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-            } else { // year
-                key = date.getFullYear().toString();
-            }
-            expenseMap[key] = (expenseMap[key] || 0) + e.amount;
-        });
-
-        const allKeys = [...new Set([...Object.keys(revenueMap), ...Object.keys(expenseMap)])].sort();
-
-        return allKeys.map(key => ({
-            name: key,
-            매출: revenueMap[key] || 0,
-            지출: expenseMap[key] || 0,
-        }));
-    };
-
-    const monthlyComparisonData = processComparisonData('month');
-    const yearlyComparisonData = processComparisonData('year');
-
+const MetricCard: React.FC<{ 
+    title: string; 
+    value: string | number; 
+    change?: number; 
+    isCurrency?: boolean;
+    icon?: string;
+}> = ({ title, value, change, isCurrency, icon }) => {
+    const isPositive = change !== undefined && change >= 0;
+    const displayValue = isCurrency ? formatCurrency(Number(value)) : value;
 
     return (
-        <div className="space-y-8">
-            <div className="flex justify-between items-end">
-                <h1 className="text-3xl font-bold text-gray-800">대시보드</h1>
-                <p className="text-sm text-gray-500">기준일: {today.toLocaleDateString('ko-KR')}</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-indigo-600 p-6 rounded-xl shadow-lg text-white col-span-1 md:col-span-2 flex flex-col justify-between">
-                    <div>
-                        <h3 className="text-indigo-100 text-sm font-medium">유효 회원 현황</h3>
-                        <div className="mt-4 flex items-baseline gap-4">
-                            <p className="text-5xl font-bold">{validMembersCount}</p>
-                            <p className="text-indigo-200">/ 전체 {students.length}명</p>
-                        </div>
-                    </div>
-                    <p className="mt-4 text-xs text-indigo-200">현재 이용권이 만료되지 않은 유효 회원 수입니다.</p>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+            <div className="flex justify-between items-start">
+                <div>
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{title}</p>
+                    <h3 className="text-2xl font-bold text-gray-900">{displayValue}</h3>
                 </div>
-                <StatCard title="홀딩 회원 수" value={holdingMembersCount} description="현재 이용권을 홀딩 중인 회원입니다." />
-                <StatCard title="총 매출" value={formatCurrency(totalRevenue)} description="누적된 전체 매출입니다." />
+                <div className="p-2 bg-gray-50 rounded-lg text-xl">{icon}</div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-                <StatCard title="이번 달 신규 회원" value={`${newMembersThisMonthCount}명`} description="이번 달에 처음 등록한 회원입니다." />
-                <StatCard title="이번 달 재등록" value={`${reregisteredMembersThisMonthCount}명`} description="이번 달에 이용권을 갱신한 회원입니다." />
-            </div>
-            
-            <div className="bg-orange-50 p-6 rounded-lg shadow-md border border-orange-200">
-                <h2 className="text-xl font-semibold text-orange-800 mb-4">
-                    만료 임박 회원 (7일 이내) ({expiringIn7Days.length}명)
-                </h2>
-                {expiringIn7Days.length > 0 ? (
-                    <ul className="divide-y divide-orange-200 max-h-72 overflow-y-auto">
-                        {expiringIn7Days.map(m => (
-                            <li key={m.id} className="py-3 flex justify-between items-center">
-                                <div>
-                                    <p className="text-sm font-medium text-gray-900">{m.studentName}</p>
-                                    <p className="text-sm text-gray-500">{m.passType}</p>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="text-sm text-gray-600 text-right">
-                                        <span className="font-medium text-red-600">만료일:</span> {new Date(m.endDate).toLocaleDateString('ko-KR')}
-                                    </div>
-                                    <button 
-                                        onClick={() => handleSendReminder(m.studentName)}
-                                        className="bg-orange-400 text-white px-3 py-1 text-xs font-semibold rounded-md hover:bg-orange-500 whitespace-nowrap"
-                                    >
-                                        알림 보내기
-                                    </button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                ) : (
-                    <div className="flex items-center justify-center h-24 text-gray-500">
-                        7일 이내에 만료되는 회원이 없습니다.
-                    </div>
-                )}
-            </div>
-
-            <AttendanceAnalytics attendance={attendance} schedule={schedule} />
-
-            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-700 mb-4">
-                    다음 달 재등록 예정 회원 ({expiringSoonMembers.length}명)
-                </h2>
-                {expiringSoonMembers.length > 0 ? (
-                    <ul className="divide-y divide-gray-200 max-h-72 overflow-y-auto">
-                        {expiringSoonMembers.map(m => (
-                            <li key={m.id} className="py-3 flex justify-between items-center">
-                                <div>
-                                    <p className="text-sm font-medium text-gray-900">{m.studentName}</p>
-                                    <p className="text-sm text-gray-500">{m.passType}</p>
-                                </div>
-                                <div className="text-sm text-gray-600 text-right">
-                                    <span className="font-medium">만료일:</span> {new Date(m.endDate).toLocaleDateString('ko-KR')}
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                ) : (
-                    <div className="flex items-center justify-center h-24 text-gray-500">
-                        다음 달에 만료되는 회원이 없습니다.
-                    </div>
-                )}
-            </div>
-
-            <div className="space-y-8">
-                <ComparisonChart title="월별 매출 및 지출" data={monthlyComparisonData} />
-                <ComparisonChart title="연도별 매출 및 지출" data={yearlyComparisonData} />
-            </div>
+            {change !== undefined && (
+                <div className="mt-4 flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isPositive ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+                        {isPositive ? '↑' : '↓'} {Math.abs(change).toFixed(1)}%
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-medium">전월 대비</span>
+                </div>
+            )}
         </div>
     );
 };
 
-const ComparisonChart: React.FC<{ title: string; data: { name: string; 매출: number; 지출: number }[] }> = ({ title, data }) => (
-    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-700 mb-4">{title}</h2>
-        {data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={data} margin={{ top: 5, right: 20, left: 40, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis tickFormatter={(value) => `${Number(value) / 1000}k`} />
-                    <Tooltip formatter={(value: number) => new Intl.NumberFormat('ko-KR').format(value) + '원'} />
-                    <Legend />
-                    <Bar dataKey="매출" fill="#6366f1" />
-                    <Bar dataKey="지출" fill="#f87171" />
-                </BarChart>
-            </ResponsiveContainer>
-        ) : (
-            <div className="flex items-center justify-center h-72 text-gray-500">
-                매출 또는 지출 데이터가 없습니다.
+export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, expenses, attendance, schedule }) => {
+    const today = dayjs().utcOffset(9);
+    const currentMonth = today.month();
+    const currentYear = today.year();
+
+    const lastMonthDate = today.subtract(1, 'month');
+    const lastMonth = lastMonthDate.month();
+    const lastMonthYear = lastMonthDate.year();
+
+    // Helper to get metrics for a specific month
+    const getMonthMetrics = (month: number, year: number) => {
+        const monthMemberships = memberships.filter(m => {
+            const d = dayjs(m.paymentDate || m.startDate);
+            return d.month() === month && d.year() === year;
+        });
+        const monthExpenses = expenses.filter(e => {
+            const d = dayjs(e.date);
+            return d.month() === month && d.year() === year;
+        });
+
+        const revenue = monthMemberships.reduce((acc, m) => acc + (m.price || 0) - (m.refundAmount || 0), 0);
+        const expense = monthExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+        
+        return { revenue, expense, profit: revenue - expense };
+    };
+
+    const currentMetrics = getMonthMetrics(currentMonth, currentYear);
+    const lastMetrics = getMonthMetrics(lastMonth, lastMonthYear);
+
+    const calculateChange = (current: number, last: number) => {
+        if (last === 0) return current > 0 ? 100 : 0;
+        return ((current - last) / last) * 100;
+    };
+
+    const activeMembersCount = useMemo(() => {
+        const t = dayjs().utcOffset(9).startOf('day');
+        return memberships.filter(m => {
+            if (!m.endDate) return false;
+            const end = dayjs(m.endDate).startOf('day');
+            return (end.isAfter(t) || end.isSame(t)) && !m.refundAmount;
+        }).length;
+    }, [memberships]);
+
+    // Last 6 months trend
+    const trendData = useMemo(() => {
+        const data = [];
+        for (let i = 5; i >= 0; i--) {
+            const d = today.subtract(i, 'month');
+            const m = d.month();
+            const y = d.year();
+            const metrics = getMonthMetrics(m, y);
+            data.push({
+                name: `${m + 1}월`,
+                매출: metrics.revenue,
+                지출: metrics.expense,
+                순수익: metrics.profit
+            });
+        }
+        return data;
+    }, [memberships, expenses, today]);
+
+    // Membership distribution
+    const pieData = useMemo(() => {
+        const counts: { [key: string]: number } = {};
+        memberships.filter(m => !m.refundAmount).forEach(m => {
+            counts[m.passType] = (counts[m.passType] || 0) + 1;
+        });
+        return Object.entries(counts).map(([name, value]) => ({ name, value }));
+    }, [memberships]);
+
+    return (
+        <div className="space-y-8 pb-12">
+            <div className="flex justify-between items-end">
+                <div>
+                    <h2 className="text-3xl font-bold text-gray-900">비즈니스 대시보드</h2>
+                    <p className="text-gray-500 mt-1">스튜디오 운영 현황 및 재무 지표 분석</p>
+                </div>
+                <div className="text-right">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Last Updated</p>
+                    <p className="text-sm font-medium text-gray-900">{today.format('YYYY-MM-DD HH:mm:ss')}</p>
+                </div>
             </div>
-        )}
-    </div>
-);
+
+            {/* Key Metrics Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <MetricCard 
+                    title="이번 달 총 매출" 
+                    value={currentMetrics.revenue} 
+                    change={calculateChange(currentMetrics.revenue, lastMetrics.revenue)}
+                    isCurrency 
+                    icon="💰"
+                />
+                <MetricCard 
+                    title="이번 달 총 지출" 
+                    value={currentMetrics.expense} 
+                    change={calculateChange(currentMetrics.expense, lastMetrics.expense)}
+                    isCurrency 
+                    icon="💸"
+                />
+                <MetricCard 
+                    title="이번 달 순수익" 
+                    value={currentMetrics.profit} 
+                    change={calculateChange(currentMetrics.profit, lastMetrics.profit)}
+                    isCurrency 
+                    icon="📈"
+                />
+                <MetricCard 
+                    title="실시간 유효 회원수" 
+                    value={activeMembersCount} 
+                    icon="👥"
+                />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Revenue Trend Chart */}
+                <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-center mb-8">
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <span className="w-1.5 h-6 bg-indigo-600 rounded-full"></span>
+                            최근 6개월 재무 흐름
+                        </h3>
+                        <div className="flex gap-4 text-xs font-bold">
+                            <div className="flex items-center gap-1.5 text-indigo-600">
+                                <span className="w-3 h-3 bg-indigo-600 rounded-full"></span> 매출
+                            </div>
+                            <div className="flex items-center gap-1.5 text-rose-500">
+                                <span className="w-3 h-3 bg-rose-500 rounded-full"></span> 지출
+                            </div>
+                        </div>
+                    </div>
+                    <div className="h-[350px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                <XAxis 
+                                    dataKey="name" 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fontSize: 12, fill: '#9ca3af', fontWeight: 500 }}
+                                    dy={10}
+                                />
+                                <YAxis 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
+                                    tickFormatter={(val) => `${val / 10000}만`}
+                                />
+                                <Tooltip 
+                                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                    formatter={(val: number) => formatCurrency(val)}
+                                />
+                                <Line type="monotone" dataKey="매출" stroke="#6366f1" strokeWidth={4} dot={{ r: 6, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+                                <Line type="monotone" dataKey="지출" stroke="#ef4444" strokeWidth={4} dot={{ r: 6, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Membership Distribution */}
+                <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+                    <h3 className="text-lg font-bold text-gray-900 mb-8 flex items-center gap-2">
+                        <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>
+                        이용권 분포 현황
+                    </h3>
+                    <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={pieData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={100}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                >
+                                    {pieData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <div className="mt-6 space-y-2">
+                        {pieData.slice(0, 4).map((item, index) => (
+                            <div key={item.name} className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
+                                    <span className="text-xs text-gray-600 font-medium truncate max-w-[120px]">{item.name}</span>
+                                </div>
+                                <span className="text-xs font-bold text-gray-900">{item.value}명</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
