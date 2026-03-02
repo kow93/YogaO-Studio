@@ -361,16 +361,35 @@ const App: React.FC = () => {
         });
    }, [setExpenses]);
 
-    const toggleAttendance = useCallback((studentId: string, date: string, classTime: string) => {
-        setAttendance(prev => {
-            const exists = prev.find(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
-            if (exists) {
-                return prev.filter(a => a.id !== exists.id);
-            } else {
-                return [...prev, { id: crypto.randomUUID(), studentId, date, classTime }];
-            }
-        });
-    }, [setAttendance]);
+const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string) => {
+    // 1. 화면 업데이트 (기존 로직)
+    setAttendance(prev => {
+        const exists = prev.find(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
+        if (exists) {
+            return prev.filter(a => a.id !== exists.id);
+        } else {
+            return [...prev, { id: crypto.randomUUID(), studentId, date, classTime }];
+        }
+    });
+
+    // 2. [추가] Supabase DB에 실시간 저장
+    const isCheckingIn = !attendance.some(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
+    
+    if (isCheckingIn && (window as any)._supabase) {
+        const student = students.find(s => s.id === studentId);
+        const { error } = await (window as any)._supabase
+            .from('attendance') // Supabase에 만든 테이블 이름
+            .insert([{ 
+                student_id: studentId, 
+                name: student?.name || 'Unknown',
+                class_time: classTime,
+                attendance_date: date
+            }]);
+
+        if (error) console.error("DB 저장 실패:", error.message);
+        else console.log("DB 저장 성공!");
+    }
+}, [attendance, students, setAttendance]);
 
     const addOrUpdateSchedule = useCallback((classData: ClassSchedule) => {
         setSchedule(prev => {
