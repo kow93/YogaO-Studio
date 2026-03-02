@@ -37,7 +37,7 @@ function parseCsvLine(line: string): string[] {
 }
 
 export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExpense, deleteExpense, importExpenses }) => {
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [date, setDate] = useState(new Date().toISOString()?.split('T')[0]);
     const [category, setCategory] = useState<ExpenseCategory>(ExpenseCategory.SUPPLIES);
     const [description, setDescription] = useState('');
     const [amount, setAmount] = useState('');
@@ -52,7 +52,7 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
                 amount: Number(amount)
             });
             // Reset form
-            setDate(new Date().toISOString().split('T')[0]);
+            setDate(new Date().toISOString()?.split('T')[0]);
             setCategory(ExpenseCategory.SUPPLIES);
             setDescription('');
             setAmount('');
@@ -99,7 +99,7 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        const today = new Date().toISOString().split('T')[0];
+        const today = new Date().toISOString()?.split('T')[0];
         link.setAttribute('download', `yogao_expenses_${today}.csv`);
         document.body.appendChild(link);
         link.click();
@@ -119,7 +119,7 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
             }
 
             try {
-                const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+                const lines = text?.split(/\r\n|\n/)?.filter(line => line.trim() !== '');
                 if (lines.length < 2) {
                     alert('파일에 헤더 외 데이터가 없습니다.');
                     return;

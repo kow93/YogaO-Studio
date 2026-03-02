@@ -141,7 +141,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        const today = new Date().toISOString().split('T')[0];
+        const today = new Date().toISOString()?.split('T')[0];
         link.setAttribute('download', `yogao_attendance_${today}.csv`);
         document.body.appendChild(link);
         link.click();
@@ -161,7 +161,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
             }
 
             try {
-                const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+                const lines = text?.split(/\r\n|\n/)?.filter(line => line.trim() !== '');
                 if (lines.length < 2) {
                     alert('파일에 헤더 외 데이터가 없습니다.');
                     return;
@@ -217,8 +217,8 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     };
     
     const renderClassBlock = (classItem: ClassSchedule, dayIndex: number) => {
-        const [startHour, startMinute] = classItem.startTime.split(':').map(Number);
-        const [endHour, endMinute] = classItem.endTime.split(':').map(Number);
+        const [startHour, startMinute] = classItem.startTime?.split(':')?.map(Number) || [0, 0];
+        const [endHour, endMinute] = classItem.endTime?.split(':')?.map(Number) || [0, 0];
         const totalStartMinutes = startHour * 60 + startMinute;
         const totalEndMinutes = endHour * 60 + endMinute;
 
@@ -229,7 +229,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
 
         const classDate = new Date(startOfWeek);
         classDate.setDate(startOfWeek.getDate() + dayIndex);
-        const dateString = classDate.toISOString().split('T')[0];
+        const dateString = classDate.toISOString()?.split('T')[0];
         const classTimeString = `${classItem.startTime} - ${classItem.className}`;
         const attendanceCount = props.attendance.filter(a =>
             a.date === dateString && a.classTime === classTimeString
@@ -341,7 +341,7 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
     const [searchTerm, setSearchTerm] = useState('');
     const { classItem, date } = classInfo;
     
-    const dateString = date.toISOString().split('T')[0];
+    const dateString = date.toISOString()?.split('T')[0];
     const classTimeString = `${classItem.startTime} - ${classItem.className}`;
 
     const activeStudents = useMemo(() => {

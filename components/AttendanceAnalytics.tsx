@@ -98,8 +98,10 @@ export const AttendanceAnalytics: React.FC<AttendanceAnalyticsProps> = ({ attend
     const timeSlotData = useMemo(() => {
         const counts: { [key: string]: number } = {};
         attendance.forEach(a => {
-            const time = a.classTime.split(' - ')[0];
-            counts[time] = (counts[time] || 0) + 1;
+            const time = a.classTime?.split(' - ')[0];
+            if (time) {
+                counts[time] = (counts[time] || 0) + 1;
+            }
         });
         return Object.entries(counts).map(([name, value]) => ({ name: `${name} 수업`, value })).sort((a,b) => b.value - a.value);
     }, [attendance]);
@@ -107,7 +109,7 @@ export const AttendanceAnalytics: React.FC<AttendanceAnalyticsProps> = ({ attend
     const programData = useMemo(() => {
         const counts: { [key: string]: number } = {};
         attendance.forEach(a => {
-            const program = a.classTime.split(' - ')[1];
+            const program = a.classTime?.split(' - ')[1];
             if(program) {
                counts[program] = (counts[program] || 0) + 1;
             }

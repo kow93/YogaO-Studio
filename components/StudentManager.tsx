@@ -30,8 +30,8 @@ const AddStudentModal: React.FC<{
     const [phone, setPhone] = useState('');
     const [remarks, setRemarks] = useState('');
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
-    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+    const [startDate, setStartDate] = useState(new Date().toISOString()?.split('T')[0]);
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString()?.split('T')[0]);
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
 
@@ -43,8 +43,8 @@ const AddStudentModal: React.FC<{
             setPhone('');
             setRemarks('');
             setPassType(PassType.MONTHLY_3_PER_WEEK);
-            setStartDate(new Date().toISOString().split('T')[0]);
-            setPaymentDate(new Date().toISOString().split('T')[0]);
+            setStartDate(new Date().toISOString()?.split('T')[0]);
+            setPaymentDate(new Date().toISOString()?.split('T')[0]);
             setPaymentMethod('카드');
             setCashReceiptIssued(false);
             onClose();
@@ -135,14 +135,14 @@ const ReregisterForm: React.FC<{
         if (latestMembership) {
             const nextDay = new Date(latestMembership.endDate);
             nextDay.setDate(nextDay.getDate() + 1);
-            return nextDay.toISOString().split('T')[0];
+            return nextDay.toISOString()?.split('T')[0];
         }
-        return new Date().toISOString().split('T')[0];
+        return new Date().toISOString()?.split('T')[0];
     };
 
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(getDefaultStartDate());
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString()?.split('T')[0]);
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
 
@@ -214,8 +214,8 @@ const PastMembershipForm: React.FC<{
     onCancel: () => void;
 }> = ({ student, onAddMembership, onCancel }) => {
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
-    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+    const [startDate, setStartDate] = useState(new Date().toISOString()?.split('T')[0]);
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString()?.split('T')[0]);
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
     const [customPrice, setCustomPrice] = useState<string>(String(PASS_PRICES[PassType.MONTHLY_3_PER_WEEK]));
@@ -345,6 +345,39 @@ const UpgradeForm: React.FC<{
 };
 
 
+const getStatus = (membership: Membership | undefined): { text: string; color: string; dotColor: string } => {
+    if (!membership) return { text: '이용권 없음', color: 'bg-gray-100 text-gray-600', dotColor: 'bg-gray-400' };
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(membership.startDate);
+    start.setHours(0, 0, 0, 0);
+
+    if (start > today) {
+        const diffDays = Math.ceil((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return { text: `시작 ${diffDays}일 전`, color: 'bg-blue-50 text-blue-700 border-blue-100', dotColor: 'bg-blue-500' };
+    }
+
+    if (membership.holdStartDate && membership.holdEndDate) {
+        const holdStart = new Date(membership.holdStartDate);
+        holdStart.setHours(0, 0, 0, 0);
+        const holdEnd = new Date(membership.holdEndDate);
+        holdEnd.setHours(0, 0, 0, 0);
+        
+        if (today >= holdStart && today <= holdEnd) {
+            return { text: '홀딩중', color: 'bg-amber-50 text-amber-700 border-amber-100', dotColor: 'bg-amber-500' };
+        }
+    }
+
+    const end = new Date(membership.endDate);
+    end.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) return { text: '만료됨', color: 'bg-rose-50 text-rose-700 border-rose-100', dotColor: 'bg-rose-500' };
+    if (diffDays <= 7) return { text: `${diffDays + 1}일 남음`, color: 'bg-orange-50 text-orange-700 border-orange-100', dotColor: 'bg-orange-500' };
+    return { text: '이용중', color: 'bg-emerald-50 text-emerald-700 border-emerald-100', dotColor: 'bg-emerald-500' };
+};
+
 const StudentDetailModal: React.FC<{
     student: Student;
     membership?: Membership; // latest membership
@@ -363,9 +396,9 @@ const StudentDetailModal: React.FC<{
     const [phone, setPhone] = useState(student.phone);
     const [remarks, setRemarks] = useState(student.remarks || '');
     const [passType, setPassType] = useState(membership?.passType || PassType.MONTHLY_3_PER_WEEK);
-    const [startDate, setStartDate] = useState(membership ? membership.startDate.split('T')[0] : '');
-    const [endDate, setEndDate] = useState(membership ? membership.endDate.split('T')[0] : '');
-    const [paymentDate, setPaymentDate] = useState(membership ? (membership.paymentDate || membership.startDate).split('T')[0] : '');
+    const [startDate, setStartDate] = useState(membership?.startDate?.split('T')[0] || '');
+    const [endDate, setEndDate] = useState(membership?.endDate?.split('T')[0] || '');
+    const [paymentDate, setPaymentDate] = useState(membership ? (membership.paymentDate || membership.startDate)?.split('T')[0] : '');
     const [holdStart, setHoldStart] = useState('');
     const [holdEnd, setHoldEnd] = useState('');
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>(membership?.paymentMethod || '카드');
@@ -386,9 +419,9 @@ const StudentDetailModal: React.FC<{
         const membershipData: Partial<Omit<Membership, 'id' | 'studentId'>> = {};
         if (membership) {
             if (passType !== membership.passType) membershipData.passType = passType;
-            if (startDate !== membership.startDate.split('T')[0]) membershipData.startDate = startDate;
-            if (paymentDate !== (membership.paymentDate || membership.startDate).split('T')[0]) membershipData.paymentDate = paymentDate;
-            if (endDate !== membership.endDate.split('T')[0]) membershipData.endDate = endDate;
+            if (startDate !== membership.startDate?.split('T')[0]) membershipData.startDate = startDate;
+            if (paymentDate !== (membership.paymentDate || membership.startDate)?.split('T')[0]) membershipData.paymentDate = paymentDate;
+            if (endDate !== membership.endDate?.split('T')[0]) membershipData.endDate = endDate;
             if (paymentMethod !== membership.paymentMethod) membershipData.paymentMethod = paymentMethod;
             if (cashReceiptIssued !== (membership.cashReceiptIssued || false)) membershipData.cashReceiptIssued = cashReceiptIssued;
             
@@ -729,39 +762,6 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
     const [isBulkExtendModalOpen, setIsBulkExtendModalOpen] = useState(false);
     const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-
-    const getStatus = (membership: Membership | undefined): { text: string; color: string; dotColor: string } => {
-        if (!membership) return { text: '이용권 없음', color: 'bg-gray-100 text-gray-600', dotColor: 'bg-gray-400' };
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const start = new Date(membership.startDate);
-        start.setHours(0, 0, 0, 0);
-
-        if (start > today) {
-            const diffDays = Math.ceil((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-            return { text: `시작 ${diffDays}일 전`, color: 'bg-blue-50 text-blue-700 border-blue-100', dotColor: 'bg-blue-500' };
-        }
-
-        if (membership.holdStartDate && membership.holdEndDate) {
-            const holdStart = new Date(membership.holdStartDate);
-            holdStart.setHours(0, 0, 0, 0);
-            const holdEnd = new Date(membership.holdEndDate);
-            holdEnd.setHours(0, 0, 0, 0);
-            
-            if (today >= holdStart && today <= holdEnd) {
-                return { text: '홀딩중', color: 'bg-amber-50 text-amber-700 border-amber-100', dotColor: 'bg-amber-500' };
-            }
-        }
-
-        const end = new Date(membership.endDate);
-        end.setHours(0, 0, 0, 0);
-        const diffDays = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-        if (diffDays < 0) return { text: '만료됨', color: 'bg-rose-50 text-rose-700 border-rose-100', dotColor: 'bg-rose-500' };
-        if (diffDays <= 7) return { text: `${diffDays + 1}일 남음`, color: 'bg-orange-50 text-orange-700 border-orange-100', dotColor: 'bg-orange-500' };
-        return { text: '이용중', color: 'bg-emerald-50 text-emerald-700 border-emerald-100', dotColor: 'bg-emerald-500' };
-    };
 
     const studentData = useMemo(() => {
         return students

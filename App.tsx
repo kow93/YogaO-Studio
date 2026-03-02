@@ -59,9 +59,9 @@ const App: React.FC = () => {
                 { data: expensesData }
             ] = await Promise.all([
                 supabase.from('students').select('*'),
-                supabase.from('memberships').select('*'),
+                supabase.from('membership').select('*'),
                 supabase.from('attendance').select('*'),
-                supabase.from('expenses').select('*')
+                supabase.from('expense').select('*')
             ]);
             
             if (studentsData) setStudents(studentsData);
@@ -97,7 +97,7 @@ const App: React.FC = () => {
 
         if (supabase) {
             await supabase.from('students').insert([newStudent]);
-            await supabase.from('memberships').insert([newMembership]);
+            await supabase.from('membership').insert([newMembership]);
         }
     }, [supabase]);
 
@@ -142,7 +142,7 @@ const App: React.FC = () => {
         setMemberships(prev => [...prev, newMembership]);
 
         if (supabase) {
-            await supabase.from('memberships').insert([newMembership]);
+            await supabase.from('membership').insert([newMembership]);
         }
     }, [memberships, supabase]);
 
@@ -188,8 +188,8 @@ const App: React.FC = () => {
         alert("이용권이 성공적으로 업그레이드 되었습니다.");
 
         if (supabase) {
-            await supabase.from('memberships').update({ endDate: updatedOriginal.endDate }).eq('id', originalMembershipId);
-            await supabase.from('memberships').insert([newMembership]);
+            await supabase.from('membership').update({ endDate: updatedOriginal.endDate }).eq('id', originalMembershipId);
+            await supabase.from('membership').insert([newMembership]);
         }
     }, [memberships, supabase]);
 
@@ -200,7 +200,7 @@ const App: React.FC = () => {
 
         if (supabase) {
             await supabase.from('students').delete().eq('id', studentIdToDelete);
-            await supabase.from('memberships').delete().eq('studentId', studentIdToDelete);
+            await supabase.from('membership').delete().eq('studentId', studentIdToDelete);
             await supabase.from('attendance').delete().eq('studentId', studentIdToDelete);
         }
     }, [supabase]);
@@ -257,7 +257,7 @@ const App: React.FC = () => {
                 await supabase.from('students').update(updatedStudentData).eq('id', studentId);
             }
             if (newFullMembershipData) {
-                await supabase.from('memberships').update(newFullMembershipData).eq('id', membershipId);
+                await supabase.from('membership').update(newFullMembershipData).eq('id', membershipId);
             }
         }
     }, [memberships, supabase]);
@@ -316,7 +316,7 @@ const App: React.FC = () => {
                 await supabase.from('students').update({ remarks: s.remarks }).eq('id', s.id);
             }
             for (const m of updatedMemberships) {
-                await supabase.from('memberships').update({ endDate: m.endDate }).eq('id', m.id);
+                await supabase.from('membership').update({ endDate: m.endDate }).eq('id', m.id);
             }
         }
     }, [memberships, supabase]);
@@ -379,7 +379,7 @@ const App: React.FC = () => {
 
         if (supabase) {
             if (newStudents.length > 0) await supabase.from('students').insert(newStudents);
-            if (newMemberships.length > 0) await supabase.from('memberships').insert(newMemberships);
+            if (newMemberships.length > 0) await supabase.from('membership').insert(newMemberships);
         }
     }, [supabase]);
 
@@ -445,7 +445,7 @@ const App: React.FC = () => {
         });
 
         if (supabase && newExpensesToInsert.length > 0) {
-            await supabase.from('expenses').insert(newExpensesToInsert);
+            await supabase.from('expense').insert(newExpensesToInsert);
         }
    }, [supabase]);
 
@@ -483,14 +483,14 @@ const App: React.FC = () => {
         const newExpense = { ...expense, id: crypto.randomUUID() };
         setExpenses(prev => [...prev, newExpense]);
         if (supabase) {
-            await supabase.from('expenses').insert([newExpense]);
+            await supabase.from('expense').insert([newExpense]);
         }
     }, [supabase]);
 
     const deleteExpense = useCallback(async (expenseId: string) => {
         setExpenses(prev => prev.filter(e => e.id !== expenseId));
         if (supabase) {
-            await supabase.from('expenses').delete().eq('id', expenseId);
+            await supabase.from('expense').delete().eq('id', expenseId);
         }
     }, [supabase]);
 
