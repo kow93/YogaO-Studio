@@ -362,7 +362,7 @@ const App: React.FC = () => {
    }, [setExpenses]);
 
 const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string) => {
-    // 1. 화면 업데이트 (기존 로직)
+    // 1. 화면 UI 업데이트 (기존 로직 유지)
     setAttendance(prev => {
         const exists = prev.find(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
         if (exists) {
@@ -372,22 +372,28 @@ const toggleAttendance = useCallback(async (studentId: string, date: string, cla
         }
     });
 
-    // 2. [추가] Supabase DB에 실시간 저장
+    // 2. Supabase DB에 실시간 저장
+    // 이미 출석한 기록이 있는지 확인 (없을 때만 DB에 추가)
     const isCheckingIn = !attendance.some(a => a.studentId === studentId && a.date === date && a.classTime === classTime);
     
     if (isCheckingIn && (window as any)._supabase) {
         const student = students.find(s => s.id === studentId);
+        
         const { error } = await (window as any)._supabase
-            .from('attendance') // Supabase에 만든 테이블 이름
+            .from('attendance') // 이미지의 테이블 이름
             .insert([{ 
                 student_id: studentId, 
                 name: student?.name || 'Unknown',
                 class_time: classTime,
                 attendance_date: date
+                // created_at은 DB에서 자동으로 생성됩니다.
             }]);
 
-        if (error) console.error("DB 저장 실패:", error.message);
-        else console.log("DB 저장 성공!");
+        if (error) {
+            console.error("DB 저장 오류:", error.message);
+        } else {
+            console.log("DB 저장 완료!");
+        }
     }
 }, [attendance, students, setAttendance]);
 
