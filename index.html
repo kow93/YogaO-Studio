@@ -4,7 +4,7 @@
     <meta charset="UTF-g" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Yogao Studio Manager</title>
+    <title>YogaO-Studio 출석체크</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,9 +26,17 @@
   }
 }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+  <script>
+  // 1. 연결 정보 설정
+  const supabaseUrl = 'https://pycrqmlccjvgnfiygktm.supabase.co';
+  const supabaseKey = 'sb_publishable_qpYIuBzSZWlwhQcIbiF_rw_fTQq4iI1';
+  const _supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+</script>  
   </body>
 </html>
