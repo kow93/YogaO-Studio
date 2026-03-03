@@ -1,67 +1,37 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { Student, AttendanceRecord, Membership, ClassSchedule } from '../types';
 import { CLASS_COLORS } from '../constants';
-import { CloseIcon, DownloadIcon, UploadIcon, PlusIcon, SearchIcon } from './icons';
+import { SearchIcon, CloseIcon, PlusIcon } from './icons';
 
-interface ScheduleManagerProps {
+interface AttendanceManagerProps {
     students: Student[];
-    memberships: Membership[];
     attendance: AttendanceRecord[];
-    toggleAttendance: (studentId: string, date: string, classTime: string, classId?: string) => void;
-    schedule: ClassSchedule[];
-    addOrUpdateSchedule: (classData: ClassSchedule) => void;
-    deleteSchedule: (classId: string) => void;
-    importAttendance: (data: any[]) => void;
+    memberships?: Membership[];
+    schedule?: ClassSchedule[];
+    toggleAttendance?: (studentId: string, date: string, classTime: string, classId?: string) => void;
+    addOrUpdateSchedule?: (classData: ClassSchedule) => void;
+    deleteSchedule?: (classId: string) => void;
 }
 
-const DAYS = ['월', '화', '수', '목', '금', '토'];
+const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const WEEK_DAYS = ['월', '화', '수', '목', '금', '토'];
 const HOURS = Array.from({ length: 17 }, (_, i) => i + 6); // 6 AM to 10 PM
 
 const getStartOfWeek = (date: dayjs.Dayjs) => {
     return date.startOf('week').add(1, 'day'); // Monday
 };
 
-function parseCsvLine(line: string): string[] {
-    const result: string[] = [];
-    let currentField = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-            if (inQuotes && line[i + 1] === '"') {
-                currentField += '"';
-                i++;
-            } else {
-                inQuotes = !inQuotes;
-            }
-        } else if (char === ',' && !inQuotes) {
-            result.push(currentField.trim());
-            currentField = '';
-        } else {
-            currentField += char;
-        }
-    }
-    result.push(currentField.trim());
-    return result;
-}
-
 const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, targetDate: string) => {
-    // 1. Aggressive Date Normalization (YYYY-MM-DD)
     const toISODate = (d: any) => {
         try {
             if (!d) return '';
-            // Handle "YYYY. MM. DD." or "YYYY/MM/DD" or "YYYY년 MM월 DD일"
-            // Remove all non-digit chars except separators if possible, or just parse
-            // Simplest: use dayjs but handle common Korean separators
             const cleanStr = String(d)
                 .replace(/년|월/g, '-')
                 .replace(/일/g, '')
                 .replace(/\./g, '-')
                 .replace(/\//g, '-')
                 .replace(/\s/g, '');
-            
             const parsed = dayjs(cleanStr);
             if (parsed.isValid()) return parsed.format('YYYY-MM-DD');
             return String(d);
@@ -70,40 +40,62 @@ const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, target
         }
     };
 
-    const rDate = toISODate(record.date);
+    const rDate = toISODate((record as any).attendance_date || (record as any)['출석 날짜'] || record.date);
     const tDate = toISODate(targetDate);
 
     if (rDate !== tDate) return false;
 
-    // 2. ID Check (Priority)
+    const rawDbInfo = String((record as any).class_info || (record as any)['수업 시간 정보'] || record.classTime || '');
+    const targetClassInfo = `${classItem.startTime} - ${classItem.className}`;
+    
+    // 1순위: 정확한 class_info 매칭
+    if (rawDbInfo === targetClassInfo) return true;
+    
+    // 2순위: classId 매칭
     if (record.classId && classItem.id && record.classId === classItem.id) return true;
 
-    // 3. Keyword Match (Class Name Only)
-    // Remove all spaces to ensure "Yoga" matches " Yoga "
-    const dbInfo = (record.classTime || '').replace(/\s/g, '');
+    // 3순위: 과거 데이터 호환성 (공백 무시 부분 일치)
+    const dbInfoNoSpace = rawDbInfo.replace(/\s/g, '');
     const targetName = (classItem.className || '').replace(/\s/g, '');
+    const targetTime = classItem.startTime || '';
     
-    if (!targetName) return false;
-
-    const isMatch = dbInfo.includes(targetName);
-
-    // Debugging for same-date records
-    if (rDate === tDate) {
-         console.log(
-            `[Attendance Mapping] ${isMatch ? 'MATCH' : 'FAIL'} | ` +
-            `Date: ${rDate} | ` +
-            `DB Info: "${record.classTime}" | ` +
-            `Target Name: "${classItem.className}"`
-        );
-    }
-
-    return isMatch;
+    if (!targetName || !targetTime) return false;
+    
+    return rawDbInfo.includes(targetTime) && dbInfoNoSpace.includes(targetName);
 };
 
-export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
+export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
+    const { students, attendance, memberships = [], schedule = [], toggleAttendance, addOrUpdateSchedule, deleteSchedule } = props;
+    const [viewMode, setViewMode] = useState<'monthly' | 'weekly'>('monthly');
     const [currentDate, setCurrentDate] = useState(dayjs());
     const [modalInfo, setModalInfo] = useState<{ type: 'attendance' | 'edit'; data: any } | null>(null);
 
+    // Monthly View Logic
+    const startOfMonth = currentDate.startOf('month');
+    const endOfMonth = currentDate.endOf('month');
+    const startCalendar = startOfMonth.startOf('week');
+    const endCalendar = endOfMonth.endOf('week');
+
+    const calendarDays = useMemo(() => {
+        const days = [];
+        let day = startCalendar;
+        while (day.isBefore(endCalendar) || day.isSame(endCalendar, 'day')) {
+            days.push(day);
+            day = day.add(1, 'day');
+        }
+        return days;
+    }, [startCalendar, endCalendar]);
+
+    const getDailyAttendanceCount = (date: dayjs.Dayjs) => {
+        const dateStr = date.format('YYYY-MM-DD');
+        return attendance.filter((a: any) => {
+            const rDate = (a.attendance_date || a['출석 날짜'] || a.date || '').replace(/년|월/g, '-').replace(/일/g, '').replace(/\./g, '-').replace(/\//g, '-').replace(/\s/g, '');
+            const parsed = dayjs(rDate);
+            return parsed.isValid() && parsed.format('YYYY-MM-DD') === dateStr;
+        }).length;
+    };
+
+    // Weekly View Logic
     const startOfWeek = getStartOfWeek(currentDate);
 
     const handleClassClick = (classItem: ClassSchedule, dayIndex: number) => {
@@ -132,81 +124,15 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     };
 
     const handleSaveClass = (classData: ClassSchedule) => {
-        props.addOrUpdateSchedule(classData);
+        if (addOrUpdateSchedule) addOrUpdateSchedule(classData);
         setModalInfo(null);
     };
 
     const handleDeleteClass = (classId: string) => {
-        props.deleteSchedule(classId);
+        if (deleteSchedule) deleteSchedule(classId);
         setModalInfo(null);
     };
 
-    const handleExport = () => {
-        if (props.attendance.length === 0) return;
-        const headerMapping = { student_id: '회원 ID', student_name: '이름', student_phone: '연락처', attendance_date: '출석 날짜', class_time: '수업 시간 정보' };
-        const englishHeaders = Object.keys(headerMapping);
-        const koreanHeaders = Object.values(headerMapping);
-        const dataToExport = props.attendance.map(record => {
-            const student = props.students.find(s => s.id === record.studentId);
-            return { student_id: record.studentId, student_name: student ? student.name : '알 수 없음', student_phone: student ? student.phone : '', attendance_date: record.date, class_time: record.classTime };
-        });
-        const csvRows = dataToExport.map(row => englishHeaders.map(header => {
-            let value = row[header as keyof typeof row];
-            if (value === null || value === undefined) return '';
-            let stringValue = String(value);
-            if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-                stringValue = `"${stringValue.replace(/"/g, '""')}"`;
-            }
-            return stringValue;
-        }).join(','));
-        const csvContent = "\uFEFF" + [koreanHeaders.join(','), ...csvRows].join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        const today = dayjs().format('YYYY-MM-DD');
-        link.setAttribute('download', `yogao_attendance_${today}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const text = e.target?.result as string;
-            if (!text) return;
-            try {
-                const lines = text?.split(/\r\n|\n/)?.filter(line => line.trim() !== '');
-                if (lines.length < 2) return;
-                const koreanToEnglishMap: { [key: string]: string } = { '회원 ID': 'student_id', '이름': 'student_name', '연락처': 'student_phone', '출석 날짜': 'attendance_date', '수업 시간 정보': 'class_time' };
-                const headerLine = parseCsvLine(lines[0]).map(h => h.trim().replace(/^\uFEFF/, ''));
-                const headerIndexMap: { [key: string]: number } = {};
-                headerLine.forEach((h, i) => {
-                    const englishKey = koreanToEnglishMap[h];
-                    if (englishKey) headerIndexMap[englishKey] = i;
-                });
-                const validData: any[] = [];
-                lines.slice(1).forEach(line => {
-                    const values = parseCsvLine(line);
-                    const rowObj: { [key: string]: any } = {};
-                    Object.keys(headerIndexMap).forEach(englishKey => {
-                        const idx = headerIndexMap[englishKey];
-                        if (values[idx] !== undefined) rowObj[englishKey] = values[idx];
-                    });
-                    if (rowObj.attendance_date && rowObj.class_time) validData.push(rowObj);
-                });
-                if (validData.length > 0) props.importAttendance(validData);
-            } catch (error) {
-                console.error("Error parsing CSV:", error);
-            }
-        };
-        reader.readAsText(file, 'UTF-8');
-        event.target.value = '';
-    };
-    
     const renderClassBlock = (classItem: ClassSchedule, dayIndex: number) => {
         const [startHour, startMinute] = classItem.startTime?.split(':')?.map(Number) || [0, 0];
         const [endHour, endMinute] = classItem.endTime?.split(':')?.map(Number) || [0, 0];
@@ -217,10 +143,8 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
         const colorClasses = CLASS_COLORS[classItem.color]?.classes || CLASS_COLORS['blue'].classes;
         const classDate = startOfWeek.add(dayIndex, 'day');
         const dateString = classDate.format('YYYY-MM-DD');
-        const classTimeString = `${classItem.startTime} - ${classItem.className}`;
         
-        // User requested loose match on classTime string as primary matching logic
-        const attendanceCount = props.attendance.filter(a => isLooseMatch(a, classItem, dateString)).length;
+        const attendanceCount = attendance.filter(a => isLooseMatch(a, classItem, dateString)).length;
 
         return (
             <div
@@ -246,67 +170,132 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     };
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-6">
             <div className="flex justify-between items-end">
                 <div>
-                    <h2 className="text-3xl font-bold text-gray-900">시간표 & 출결</h2>
-                    <p className="text-gray-500 mt-1">주간 수업 일정 관리 및 출석 현황 확인</p>
+                    <h2 className="text-3xl font-bold text-gray-900">출결 관리</h2>
+                    <p className="text-gray-500 mt-1">월별 및 주간 수업 일정 관리</p>
                 </div>
                 <div className="flex gap-3">
-                    <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
-                        <button onClick={() => setCurrentDate(d => d.subtract(7, 'day'))} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400">&lt;</button>
-                        <span className="px-4 text-sm font-bold text-gray-700">{startOfWeek.format('YYYY-MM-DD')} ~ {startOfWeek.add(5, 'day').format('YYYY-MM-DD')}</span>
-                        <button onClick={() => setCurrentDate(d => d.add(7, 'day'))} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400">&gt;</button>
+                    <div className="flex bg-gray-100 p-1 rounded-xl">
+                        <button 
+                            onClick={() => setViewMode('monthly')}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'monthly' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            월간
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('weekly')}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'weekly' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            주간
+                        </button>
                     </div>
-                    <input type="file" id="attendance-import" className="hidden" accept=".csv" onChange={handleImport} />
-                    <label htmlFor="attendance-import" className="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm cursor-pointer text-sm">
-                        <UploadIcon className="w-4 h-4" /> 가져오기
-                    </label>
-                    <button onClick={handleExport} className="flex items-center gap-2 bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm">
-                        <DownloadIcon className="w-4 h-4" /> 내보내기
-                    </button>
+                    <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
+                        <button onClick={() => setCurrentDate(d => viewMode === 'monthly' ? d.subtract(1, 'month') : d.subtract(7, 'day'))} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400">&lt;</button>
+                        <span className="px-4 text-sm font-bold text-gray-900">
+                            {viewMode === 'monthly' 
+                                ? currentDate.format('YYYY년 MM월') 
+                                : `${startOfWeek.format('MM.DD')} ~ ${startOfWeek.add(5, 'day').format('MM.DD')}`}
+                        </span>
+                        <button onClick={() => setCurrentDate(d => viewMode === 'monthly' ? d.add(1, 'month') : d.add(7, 'day'))} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400">&gt;</button>
+                    </div>
                 </div>
             </div>
 
-            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="grid grid-cols-[80px_repeat(6,1fr)] min-w-[900px]">
-                    <div className="bg-gray-50/50 border-r border-b border-gray-100"></div>
-                    {DAYS.map((day, i) => {
-                        const d = startOfWeek.add(i, 'day');
-                        return (
-                             <div key={day} className="text-center py-4 border-b border-gray-100 bg-gray-50/50">
-                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{day}</div>
-                                <div className="text-sm font-bold text-gray-900">{d.date()}일</div>
-                            </div>
-                        )
-                    })}
-                    
-                    <div className="border-r border-gray-100">
-                        {HOURS.map(hour => (
-                            <div key={hour} className="h-28 flex justify-center items-start pt-2 border-b border-gray-50">
-                                <span className="text-[10px] font-bold text-gray-300">{hour}:00</span>
+            {viewMode === 'monthly' ? (
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/50">
+                        {DAYS.map(day => (
+                            <div key={day} className="py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-widest">
+                                {day}
                             </div>
                         ))}
                     </div>
+                    <div className="grid grid-cols-7 auto-rows-[120px]">
+                        {calendarDays.map((day, i) => {
+                            const isCurrentMonth = day.month() === currentDate.month();
+                            const isToday = day.isSame(dayjs(), 'day');
+                            const count = getDailyAttendanceCount(day);
+                            const dayOfWeek = day.day();
+                            const dayClasses = schedule.filter(c => c.dayOfWeek === dayOfWeek);
 
-                    {DAYS.map((_, dayIndex) => (
-                        <div key={dayIndex} className="relative border-r border-gray-100">
+                            return (
+                                <div 
+                                    key={i} 
+                                    onClick={() => {
+                                        setCurrentDate(day);
+                                        setViewMode('weekly');
+                                    }}
+                                    className={`border-b border-r border-gray-50 p-2 transition-all cursor-pointer hover:bg-gray-50 relative group ${!isCurrentMonth ? 'bg-gray-50/30 text-gray-300' : 'bg-white'}`}
+                                >
+                                    <div className={`text-sm font-bold mb-1 flex justify-between items-center ${isToday ? 'text-indigo-600' : 'text-gray-700'}`}>
+                                        <span className={isToday ? 'bg-indigo-50 px-2 py-0.5 rounded-md' : ''}>
+                                            {day.date()}
+                                        </span>
+                                    </div>
+                                    
+                                    {isCurrentMonth && dayClasses.length > 0 && (
+                                        <div className="mt-2 space-y-1">
+                                            <div className="text-[10px] font-medium text-gray-500 truncate px-1">
+                                                {dayClasses.length}개 수업
+                                            </div>
+                                            {count > 0 && (
+                                                <div className="inline-flex items-center px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
+                                                    {count}명 출석
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            ) : (
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="grid grid-cols-[80px_repeat(6,1fr)] min-w-[900px]">
+                        <div className="bg-gray-50/50 border-r border-b border-gray-100"></div>
+                        {WEEK_DAYS.map((day, i) => {
+                            const d = startOfWeek.add(i, 'day');
+                            return (
+                                 <div key={day} className="text-center py-4 border-b border-gray-100 bg-gray-50/50">
+                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{day}</div>
+                                    <div className="text-sm font-bold text-gray-900">{d.date()}일</div>
+                                </div>
+                            )
+                        })}
+                        
+                        <div className="border-r border-gray-100">
                             {HOURS.map(hour => (
-                                <div key={hour} onClick={() => handleEmptySlotClick(dayIndex, hour)} className="h-28 border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group flex items-center justify-center">
-                                    <PlusIcon className="w-4 h-4 text-gray-200 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div key={hour} className="h-28 flex justify-center items-start pt-2 border-b border-gray-50">
+                                    <span className="text-[10px] font-bold text-gray-300">{hour}:00</span>
                                 </div>
                             ))}
-                            {props.schedule.filter(c => c.dayOfWeek === dayIndex + 1).map(c => renderClassBlock(c, dayIndex))}
                         </div>
-                    ))}
+
+                        {WEEK_DAYS.map((_, dayIndex) => (
+                            <div key={dayIndex} className="relative border-r border-gray-100">
+                                {HOURS.map(hour => (
+                                    <div key={hour} onClick={() => handleEmptySlotClick(dayIndex, hour)} className="h-28 border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group flex items-center justify-center">
+                                        <PlusIcon className="w-4 h-4 text-gray-200 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </div>
+                                ))}
+                                {schedule.filter(c => c.dayOfWeek === dayIndex + 1).map(c => renderClassBlock(c, dayIndex))}
+                            </div>
+                        ))}
+                    </div>
                 </div>
-            </div>
-            
+            )}
+
             {modalInfo?.type === 'attendance' && 
                 <ClassAttendanceModal 
                     isOpen={true} 
                     onClose={() => setModalInfo(null)}
-                    {...props}
+                    students={students}
+                    memberships={memberships}
+                    attendance={attendance}
+                    toggleAttendance={toggleAttendance}
                     classInfo={modalInfo.data}
                 />
             }
@@ -324,14 +313,22 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     );
 };
 
-const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; onClose: () => void; classInfo: { classItem: ClassSchedule, date: Date } }> = ({ isOpen, onClose, students, memberships, attendance, toggleAttendance, classInfo }) => {
+const ClassAttendanceModal: React.FC<{
+    isOpen: boolean; 
+    onClose: () => void; 
+    students: Student[];
+    memberships: Membership[];
+    attendance: AttendanceRecord[];
+    toggleAttendance?: any;
+    classInfo: { classItem: ClassSchedule, date: dayjs.Dayjs } 
+}> = ({ isOpen, onClose, students, memberships, attendance, toggleAttendance, classInfo }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const { classItem, date } = classInfo;
-    const dateString = dayjs(date).format('YYYY-MM-DD');
+    const dateString = date.format('YYYY-MM-DD');
     const classTimeString = `${classItem.startTime} - ${classItem.className}`;
 
     const displayStudents = useMemo(() => {
-        const targetDate = dayjs(date).startOf('day');
+        const targetDate = date.startOf('day');
         
         // 1. Get active students
         const active = students.filter(student => {
@@ -354,11 +351,10 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
             .filter(a => isLooseMatch(a, classItem, dateString))
             .map(a => {
                 const s = students.find(s => s.id === a.studentId);
-                // Prioritize student record, but fallback to attendance record info
                 return s || { 
                     id: a.studentId || `temp-${a.id}`, 
-                    name: a.studentName || 'Unknown', 
-                    phone: a.studentPhone || '', 
+                    name: (a as any).name || a.studentName || (a as any)['이름'] || 'Unknown', 
+                    phone: (a as any).phone || a.studentPhone || (a as any)['연락처'] || '', 
                     registrationDate: '' 
                 };
             });
@@ -372,12 +368,14 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
             .filter(s => (s.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()))
             .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             
-    }, [students, memberships, date, searchTerm, attendance, dateString, classTimeString, classItem.id]);
+    }, [students, memberships, date, searchTerm, attendance, dateString, classItem]);
     
-    const isAttended = (studentId: string) => attendance.some(a => {
+    const getAttendanceRecord = (studentId: string) => attendance.find(a => {
         const isStudentMatch = a.studentId === studentId;
         return isStudentMatch && isLooseMatch(a, classItem, dateString);
     });
+    
+    const isAttended = (studentId: string) => !!getAttendanceRecord(studentId);
 
     if (!isOpen) return null;
 
@@ -388,7 +386,7 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
                     <div>
                         <h2 className="text-2xl font-bold text-gray-900">{classItem.className}</h2>
                         <p className="text-sm text-gray-500 font-medium mt-1">
-                            {dayjs(date).format('MM월 DD일 dddd')} • {classItem.startTime}
+                            {date.format('MM월 DD일 dddd')} • {classItem.startTime}
                         </p>
                     </div>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2"><CloseIcon className="w-6 h-6" /></button>
@@ -398,15 +396,23 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
                     <input type="text" placeholder="회원 이름 검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"/>
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2 space-y-2">
-                    {displayStudents.map(student => (
-                        <div key={student.id} className="p-4 flex justify-between items-center bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors">
-                            <div>
-                                <p className="font-bold text-gray-900">{student.name}</p>
-                                <p className="text-[10px] text-gray-400 font-medium">{student.phone}</p>
+                    {displayStudents.map(student => {
+                        const record = getAttendanceRecord(student.id);
+                        return (
+                            <div key={student.id} className="p-4 flex justify-between items-center bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors">
+                                <div>
+                                    <p className="font-bold text-gray-900">{student.name}</p>
+                                    <p className="text-[10px] text-gray-400 font-medium">{student.phone}</p>
+                                </div>
+                                <input 
+                                    type="checkbox" 
+                                    checked={!!record} 
+                                    onChange={() => toggleAttendance && toggleAttendance(student.id, dateString, classTimeString, classItem.id, record?.id)} 
+                                    className="h-6 w-6 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
                             </div>
-                             <input type="checkbox" checked={isAttended(student.id)} onChange={() => toggleAttendance(student.id, dateString, classTimeString, classItem.id)} className="h-6 w-6 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 cursor-pointer"/>
-                        </div>
-                    ))}
+                        );
+                    })}
                     {displayStudents.length === 0 && <div className="py-12 text-center text-gray-400">유효한 회원이 없습니다.</div>}
                 </div>
                  <div className="pt-6 mt-auto">
@@ -448,7 +454,7 @@ const AddEditClassModal: React.FC<{
                         <div>
                             <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">요일</label>
                             <select name="dayOfWeek" value={formData.dayOfWeek} onChange={handleChange} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
-                                {DAYS.map((day, i) => <option key={i} value={i+1}>{day}</option>)}
+                                {WEEK_DAYS.map((day, i) => <option key={i} value={i+1}>{day}</option>)}
                             </select>
                         </div>
                          <div>

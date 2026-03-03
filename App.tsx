@@ -4,7 +4,7 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule } from './types';
 import { PASS_PRICES, PASS_DURATIONS, DEFAULT_SCHEDULE } from './constants';
 import { Dashboard } from './components/Dashboard';
-import { ScheduleManager } from './components/ScheduleManager';
+import { AttendanceManager } from './components/AttendanceManager';
 import { ExpenseManager } from './components/ExpenseManager';
 import { ActiveMemberManager } from './components/ActiveMemberManager';
 import { MembershipHistoryManager } from './components/MembershipHistoryManager';
@@ -81,20 +81,36 @@ const App: React.FC = () => {
         const fetchData = async () => {
             if (!supabase) return;
             const [
-                { data: studentsData },
-                { data: membershipsData },
-                { data: attendanceData },
-                { data: expensesData },
-                { data: classesData }
+                { data: studentsData, error: studentError },
+                { data: membershipsData, error: membershipError },
+                { data: attendanceData, error: attendanceError },
+                { data: expensesData, error: expenseError },
+                { data: classesData, error: classError }
             ] = await Promise.all([
-                supabase.from('students').select('*'),
+                supabase.from('student').select('*'),
                 supabase.from('membership').select('*'),
-                supabase.from('attendance').select('*, students(name)'),
+                supabase.from('attendance').select('*'),
                 supabase.from('expense').select('*'),
                 supabase.from('classes').select('*')
             ]);
             
-            if (studentsData) setStudents(studentsData);
+            console.log('--- Supabase Raw Data ---');
+            console.log('students:', studentsData, studentError);
+            console.log('membership:', membershipsData, membershipError);
+            console.log('attendance:', attendanceData, attendanceError);
+            console.log('expense:', expensesData, expenseError);
+            console.log('classes:', classesData, classError);
+            console.log('-------------------------');
+            
+            if (studentsData) {
+                const mappedStudents = studentsData.map((s: any) => ({
+                    ...s,
+                    id: s.student_id || s.id,
+                    phone: s.phone ? String(s.phone).padStart(11, '0') : '',
+                    registrationDate: s.registration_date || s.registrationDate
+                }));
+                setStudents(mappedStudents);
+            }
             if (membershipsData) {
                 const mapped = membershipsData.map((m: any) => ({
                     id: m.id,
@@ -117,11 +133,11 @@ const App: React.FC = () => {
                 const mapped = attendanceData.map((a: any) => ({
                     id: a.id,
                     studentId: a.student_id || a.studentId,
-                    studentName: a['이름'] || a.studentName || a.students?.name,
-                    studentPhone: a['연락처'] || a.studentPhone,
+                    studentName: a.name || a['이름'] || a.studentName,
+                    studentPhone: a.phone || a['연락처'] || a.studentPhone,
                     classId: a.class_id || a.classId,
-                    date: a['출석 날짜'] || a.date,
-                    classTime: a['수업 시간 정보'] || a.classTime,
+                    date: a.attendance_date || a['출석 날짜'] || a.date,
+                    classTime: a.class_info || a['수업 시간 정보'] || a.classTime,
                 }));
                 setAttendance(mapped);
             }
@@ -190,7 +206,14 @@ const App: React.FC = () => {
         setMemberships(prev => [...prev, newMembership]);
 
         if (supabase) {
-            await supabase.from('students').insert([newStudent]);
+            await supabase.from('student').insert([{
+                id: newStudent.id,
+                name: newStudent.name,
+                phone: newStudent.phone,
+                registration_date: newStudent.registrationDate,
+                remarks: newStudent.remarks,
+                memo: newStudent.memo
+            }]);
             await supabase.from('membership').insert([{
                 id: newMembership.id,
                 student_id: newMembership.studentId,
@@ -319,9 +342,9 @@ const App: React.FC = () => {
         setAttendance(prevAttendance => prevAttendance.filter(record => record.studentId !== studentIdToDelete));
 
         if (supabase) {
-            await supabase.from('students').delete().eq('id', studentIdToDelete);
-            await supabase.from('membership').delete().eq('studentId', studentIdToDelete);
-            await supabase.from('attendance').delete().eq('studentId', studentIdToDelete);
+            await supabase.from('student').delete().eq('id', studentIdToDelete);
+            await supabase.from('membership').delete().eq('student_id', studentIdToDelete);
+            await supabase.from('attendance').delete().eq('student_id', studentIdToDelete);
         }
     }, [supabase]);
     
@@ -374,10 +397,20 @@ const App: React.FC = () => {
 
         if (supabase) {
             if (Object.keys(updatedStudentData).length > 0) {
-                await supabase.from('students').update(updatedStudentData).eq('id', studentId);
+                await supabase.from('student').update(updatedStudentData).eq('id', studentId);
             }
             if (newFullMembershipData) {
-                await supabase.from('membership').update(newFullMembershipData).eq('id', membershipId);
+                const mappedMembershipData = {
+                    pass_type: newFullMembershipData.passType,
+                    start_date: newFullMembershipData.startDate,
+                    end_date: newFullMembershipData.endDate,
+                    price: newFullMembershipData.price,
+                    hold_start_date: newFullMembershipData.holdStartDate || null,
+                    hold_end_date: newFullMembershipData.holdEndDate || null,
+                    payment_method: newFullMembershipData.paymentMethod,
+                    cash_receipt_issued: newFullMembershipData.cashReceiptIssued
+                };
+                await supabase.from('membership').update(mappedMembershipData).eq('id', membershipId);
             }
         }
     }, [memberships, supabase]);
@@ -433,7 +466,7 @@ const App: React.FC = () => {
 
         if (supabase) {
             for (const s of updatedStudents) {
-                await supabase.from('students').update({ remarks: s.remarks }).eq('id', s.id);
+                await supabase.from('student').update({ remarks: s.remarks }).eq('id', s.id);
             }
             for (const m of updatedMemberships) {
                 await supabase.from('membership').update({ endDate: m.endDate }).eq('id', m.id);
@@ -498,8 +531,35 @@ const App: React.FC = () => {
         alert(`데이터 가져오기 완료: 학생 ${addedStudentsCount}명, 이용권 ${addedMembershipsCount}개 추가됨.`);
 
         if (supabase) {
-            if (newStudents.length > 0) await supabase.from('students').insert(newStudents);
-            if (newMemberships.length > 0) await supabase.from('membership').insert(newMemberships);
+            if (newStudents.length > 0) {
+                const mappedStudents = newStudents.map(s => ({
+                    id: s.id,
+                    name: s.name,
+                    phone: s.phone,
+                    registration_date: s.registrationDate,
+                    remarks: s.remarks,
+                    memo: s.memo
+                }));
+                await supabase.from('student').insert(mappedStudents);
+            }
+            if (newMemberships.length > 0) {
+                const mappedMemberships = newMemberships.map(m => ({
+                    id: m.id,
+                    student_id: m.studentId,
+                    pass_type: m.passType,
+                    start_date: m.startDate,
+                    end_date: m.endDate,
+                    price: m.price,
+                    discount_amount: m.discountAmount,
+                    refund_amount: m.refundAmount,
+                    payment_date: m.paymentDate,
+                    hold_start_date: m.holdStartDate,
+                    hold_end_date: m.holdEndDate,
+                    payment_method: m.paymentMethod,
+                    cash_receipt_issued: m.cashReceiptIssued
+                }));
+                await supabase.from('membership').insert(mappedMemberships);
+            }
         }
     }, [supabase]);
 
@@ -569,8 +629,8 @@ const App: React.FC = () => {
         }
    }, [supabase]);
 
-    const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string) => {
-        const exists = attendance.find(a => {
+    const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string, existingRecordId?: string) => {
+        const exists = existingRecordId ? attendance.find(a => a.id === existingRecordId) : attendance.find(a => {
             if (classId && a.classId) {
                 return a.studentId === studentId && a.date === date && a.classId === classId;
             }
@@ -598,11 +658,11 @@ const App: React.FC = () => {
                 await supabase.from('attendance').insert([{
                     id: newRecord.id,
                     student_id: newRecord.studentId,
-                    '출석 날짜': newRecord.date,
-                    '수업 시간 정보': newRecord.classTime,
+                    attendance_date: newRecord.date,
+                    class_info: newRecord.classTime,
                     class_id: newRecord.classId,
-                    '이름': newRecord.studentName,
-                    '연락처': newRecord.studentPhone
+                    name: newRecord.studentName,
+                    phone: newRecord.studentPhone
                 }]);
             }
         }
@@ -634,14 +694,19 @@ const App: React.FC = () => {
         setSchedule(prev => prev.filter(c => c.id !== classId));
         if (supabase) {
             const { error } = await supabase.from('classes').delete().eq('id', classId);
-            if (error) console.error('Error deleting schedule:', error);
+            if (error) {
+                console.error('Error deleting schedule:', error);
+                alert('수업 삭제 중 오류가 발생했습니다. (DB Error)');
+            } else {
+                console.log('Class deleted successfully from DB');
+            }
         }
     }, [supabase]);
 
     const updateStudent = useCallback(async (studentId: string, updates: Partial<Student>) => {
         setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updates } : s));
         if (supabase) {
-            await supabase.from('students').update(updates).eq('id', studentId);
+            await supabase.from('student').update(updates).eq('id', studentId);
         }
     }, [supabase]);
 
@@ -685,6 +750,7 @@ const App: React.FC = () => {
                     memberships={memberships} 
                     attendance={attendance} 
                     updateStudent={updateStudent}
+                    updateStudentAndMembership={updateStudentAndMembership}
                 />;
             case 'memberships':
                 return <MembershipHistoryManager 
@@ -695,15 +761,14 @@ const App: React.FC = () => {
                     refundMembership={refundMembership}
                 />;
             case 'schedule':
-                return <ScheduleManager 
+                return <AttendanceManager 
                     students={students} 
-                    memberships={memberships} 
+                    memberships={memberships}
                     attendance={attendance} 
-                    toggleAttendance={toggleAttendance}
                     schedule={schedule}
+                    toggleAttendance={toggleAttendance}
                     addOrUpdateSchedule={addOrUpdateSchedule}
                     deleteSchedule={deleteSchedule}
-                    importAttendance={importAttendance}
                 />;
             case 'expenses':
                 return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} importExpenses={importExpenses} />;

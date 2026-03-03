@@ -36,6 +36,10 @@ export interface Membership {
   holdEndDate?: string;
   paymentMethod: '카드' | '현금';
   cashReceiptIssued?: boolean;
+  student?: {
+    name: string;
+    phone: string;
+  };
 }
 
 export interface AttendanceRecord {

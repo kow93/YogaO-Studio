@@ -2,13 +2,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { Student, Membership, AttendanceRecord, PassType } from '../types';
-import { SearchIcon } from './icons';
+import { SearchIcon, CloseIcon } from './icons';
 
 interface ActiveMemberManagerProps {
     students: Student[];
     memberships: Membership[];
     attendance: AttendanceRecord[];
     updateStudent: (studentId: string, updates: Partial<Student>) => void;
+    updateStudentAndMembership?: (studentId: string, membershipId: string, studentUpdates: Partial<Student>, membershipUpdates: Partial<Membership>) => void;
 }
 
 const MemoInput = ({ value, onSave }: { value: string, onSave: (val: string) => void }) => {
@@ -40,38 +41,82 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
     students, 
     memberships, 
     attendance,
-    updateStudent
+    updateStudent,
+    updateStudentAndMembership
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [editingMember, setEditingMember] = useState<(Student & { membership?: Membership }) | null>(null);
+    const [editForm, setEditForm] = useState({
+        name: '',
+        phone: '',
+        passType: '',
+        startDate: '',
+        endDate: '',
+        holdStartDate: '',
+        holdEndDate: '',
+    });
+
+    const openEditModal = (member: Student & { membership?: Membership }) => {
+        if (!member.membership) {
+            alert("이용권 정보가 없는 회원입니다. 멤버십 관리 탭에서 이용권을 먼저 등록해주세요.");
+            return;
+        }
+        setEditingMember(member);
+        setEditForm({
+            name: member.name,
+            phone: member.phone,
+            passType: member.membership.passType,
+            startDate: dayjs(member.membership.startDate).format('YYYY-MM-DD'),
+            endDate: dayjs(member.membership.endDate).format('YYYY-MM-DD'),
+            holdStartDate: member.membership.holdStartDate ? dayjs(member.membership.holdStartDate).format('YYYY-MM-DD') : '',
+            holdEndDate: member.membership.holdEndDate ? dayjs(member.membership.holdEndDate).format('YYYY-MM-DD') : '',
+        });
+    };
+
+    const handleEditSubmit = () => {
+        if (!editingMember || !editingMember.membership || !updateStudentAndMembership) return;
+        
+        const membershipUpdates: Partial<Membership> = {
+            passType: editForm.passType as PassType,
+            startDate: new Date(editForm.startDate).toISOString(),
+        };
+
+        if (editForm.holdStartDate && editForm.holdEndDate) {
+            membershipUpdates.holdStartDate = new Date(editForm.holdStartDate).toISOString();
+            membershipUpdates.holdEndDate = new Date(editForm.holdEndDate).toISOString();
+            // Omit endDate to let App.tsx auto-calculate it based on hold duration
+        } else {
+            membershipUpdates.holdStartDate = null as any;
+            membershipUpdates.holdEndDate = null as any;
+            membershipUpdates.endDate = new Date(editForm.endDate).toISOString();
+        }
+
+        updateStudentAndMembership(
+            editingMember.id,
+            editingMember.membership.id,
+            { name: editForm.name, phone: editForm.phone },
+            membershipUpdates
+        );
+        setEditingMember(null);
+    };
 
     const activeMembers = useMemo(() => {
-        // Get today's date in KST (UTC+9)
-        const today = dayjs().utcOffset(9).startOf('day');
-
         return students.map(student => {
             if (!student) return null;
             
             const studentMemberships = memberships.filter(m => m.studentId === student.id && !m.refundAmount);
-            if (studentMemberships.length === 0) return null;
-
+            
             // Sort by end date descending to find the latest one
             const latestMembership = studentMemberships.sort((a, b) => 
                 dayjs(b.endDate).valueOf() - dayjs(a.endDate).valueOf()
             )[0];
             
-            if (!latestMembership || !latestMembership.endDate) return null;
-
-            const endDate = dayjs(latestMembership.endDate).startOf('day');
-            if (!endDate.isValid()) return null;
-
-            // Filter: end_date must be today or in the future
-            if (endDate.isBefore(today)) return null;
-
             return {
                 ...student,
                 membership: latestMembership
             };
-        }).filter((s): s is (Student & { membership: Membership }) => s !== null);
+        }).filter((s): s is (Student & { membership?: Membership }) => s !== null)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }, [students, memberships]);
 
     const filteredMembers = useMemo(() => {
@@ -79,8 +124,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             .filter(m => 
                 (m.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
                 (m.phone || '').includes(searchTerm)
-            )
-            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            );
     }, [activeMembers, searchTerm]);
 
     const formatDate = (dateStr: string) => {
@@ -89,7 +133,8 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         return d.isValid() ? d.format('YYYY-MM-DD') : '-';
     };
 
-    const calculateAttendanceRate = (studentId: string, passType: PassType) => {
+    const calculateAttendanceRate = (studentId: string, passType?: PassType) => {
+        if (!passType) return '-';
         const today = dayjs();
         const threeMonthsAgo = today.subtract(90, 'day');
         
@@ -158,21 +203,26 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                         <tbody className="divide-y divide-gray-50">
                             {filteredMembers.map(member => (
                                 <tr key={member.id} className="hover:bg-gray-50/50 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="font-bold text-gray-900">{member.name}</div>
+                                    <td className="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => openEditModal(member)}>
+                                        <div className="font-bold text-indigo-600 hover:underline">{member.name}</div>
                                         <div className="text-xs text-gray-500">{member.phone}</div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="text-sm font-medium text-gray-700">{member.membership.passType}</div>
+                                        <div className="text-sm font-medium text-gray-700">{member.membership?.passType || '없음'}</div>
+                                        {member.membership?.holdStartDate && member.membership?.holdEndDate && (
+                                            <div className="text-xs font-bold text-amber-500 mt-1">
+                                                (홀딩중 {dayjs(member.membership.holdStartDate).format('YY/MM/DD')} ~ {dayjs(member.membership.holdEndDate).format('YY/MM/DD')})
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="text-sm text-gray-600">
-                                            {formatDate(member.membership.endDate)}
+                                            {member.membership ? formatDate(member.membership.endDate) : '-'}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="text-sm font-bold text-indigo-600">
-                                            {calculateAttendanceRate(member.id, member.membership.passType)}
+                                            {calculateAttendanceRate(member.id, member.membership?.passType)}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
@@ -192,6 +242,67 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                     </div>
                 )}
             </div>
+
+            {editingMember && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+                    <div className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-2xl font-bold text-gray-900">회원 및 이용권 수정</h2>
+                            <button onClick={() => setEditingMember(null)} className="text-gray-400 hover:text-gray-600">
+                                <CloseIcon className="w-6 h-6" />
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
+                                <input type="text" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">연락처</label>
+                                <input type="text" value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">이용권 종류</label>
+                                <select value={editForm.passType} onChange={e => setEditForm({...editForm, passType: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    {Object.values(PassType).map(pt => (
+                                        <option key={pt} value={pt}>{pt}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">시작일</label>
+                                    <input type="date" value={editForm.startDate} onChange={e => setEditForm({...editForm, startDate: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">만료일 (수동)</label>
+                                    <input type="date" value={editForm.endDate} onChange={e => setEditForm({...editForm, endDate: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                </div>
+                            </div>
+                            
+                            <div className="pt-4 border-t border-gray-100">
+                                <h3 className="text-sm font-bold text-gray-900 mb-3">홀딩 (일시정지) 설정</h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">홀딩 시작일</label>
+                                        <input type="date" value={editForm.holdStartDate} onChange={e => setEditForm({...editForm, holdStartDate: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">홀딩 종료일</label>
+                                        <input type="date" value={editForm.holdEndDate} onChange={e => setEditForm({...editForm, holdEndDate: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-indigo-600 mt-2">* 홀딩 기간을 설정하면 만료일이 자동으로 연장됩니다.</p>
+                            </div>
+
+                            <button onClick={handleEditSubmit} className="w-full py-4 mt-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors">
+                                저장하기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

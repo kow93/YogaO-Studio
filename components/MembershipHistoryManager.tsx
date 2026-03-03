@@ -33,31 +33,51 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
     };
 
     const groupedHistory = useMemo(() => {
-        const groups = new Map<string, { student: Student, memberships: Membership[] }>();
-
-        memberships.forEach(m => {
-            const student = students.find(s => s.id === m.studentId);
-            if (student) {
-                if (!groups.has(student.id)) {
-                    groups.set(student.id, { student, memberships: [] });
+        // Group memberships by studentId using reduce
+        const grouped = memberships.reduce((acc, m) => {
+            if (!acc[m.studentId]) {
+                // Find student from students array
+                let student = students.find(s => s.id === m.studentId);
+                
+                // Fallback to empty student if not found
+                if (!student) {
+                    student = {
+                        id: m.studentId,
+                        name: '이름 없음',
+                        phone: '',
+                        registrationDate: ''
+                    };
                 }
-                groups.get(student.id)?.memberships.push(m);
+                
+                acc[m.studentId] = {
+                    student,
+                    memberships: []
+                };
+            }
+            acc[m.studentId].memberships.push(m);
+            return acc;
+        }, {} as Record<string, { student: Student, memberships: Membership[] }>);
+
+        // Add students who don't have any memberships yet
+        students.forEach(student => {
+            if (!grouped[student.id]) {
+                grouped[student.id] = {
+                    student,
+                    memberships: []
+                };
             }
         });
 
-        // Sort memberships within each group by date descending
-        groups.forEach(group => {
+        // Convert to array and sort
+        return Object.values(grouped).map(group => {
+            // Sort memberships within each group by date ascending
             group.memberships.sort((a, b) => {
                 const dateA = dayjs(a.paymentDate || a.startDate).valueOf();
                 const dateB = dayjs(b.paymentDate || b.startDate).valueOf();
-                return dateB - dateA;
+                return dateA - dateB;
             });
-        });
-
-        // Convert to array and sort by student name
-        return Array.from(groups.values()).sort((a, b) => 
-            (a.student.name || '').localeCompare(b.student.name || '')
-        );
+            return group;
+        }).sort((a, b) => (a.student.name || '').localeCompare(b.student.name || ''));
     }, [memberships, students]);
 
     const filteredGroups = groupedHistory.filter(g => 
@@ -104,7 +124,7 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
                             <tr className="bg-gray-50/50 border-b border-gray-100">
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">회원명</th>
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">연락처</th>
-                                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right">총 결제 건수</th>
+                                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right">멤버십 히스토리</th>
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">최근 결제일</th>
                             </tr>
                         </thead>
@@ -122,7 +142,7 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
                                         <td className="px-6 py-4 text-sm text-gray-500">{group.student.phone}</td>
                                         <td className="px-6 py-4 text-right text-sm font-bold text-indigo-600">{group.memberships.length}건</td>
                                         <td className="px-6 py-4 text-sm text-gray-500">
-                                            {formatDate(group.memberships[0]?.paymentDate || group.memberships[0]?.startDate)}
+                                            {formatDate(group.memberships[group.memberships.length - 1]?.paymentDate || group.memberships[group.memberships.length - 1]?.startDate)}
                                         </td>
                                     </tr>
                                     {expandedStudentId === group.student.id && (
@@ -150,6 +170,11 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
                                                                         <div className="text-[10px] text-gray-400">
                                                                             {formatDate(item.startDate)} ~ {formatDate(item.endDate)}
                                                                         </div>
+                                                                        {item.holdStartDate && item.holdEndDate && (
+                                                                            <div className="text-[10px] font-bold text-amber-500 mt-1">
+                                                                                (홀딩중 {formatDate(item.holdStartDate)} ~ {formatDate(item.holdEndDate)})
+                                                                            </div>
+                                                                        )}
                                                                     </td>
                                                                     <td className="px-4 py-3 text-right">
                                                                         <div className="font-bold text-gray-900">

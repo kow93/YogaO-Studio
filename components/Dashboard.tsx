@@ -88,11 +88,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
 
     const activeMembersCount = useMemo(() => {
         const t = dayjs().utcOffset(9).startOf('day');
-        return memberships.filter(m => {
-            if (!m.endDate) return false;
+        const activeStudentIds = new Set();
+        memberships.forEach(m => {
+            if (!m.endDate || m.refundAmount) return;
             const end = dayjs(m.endDate).startOf('day');
-            return (end.isAfter(t) || end.isSame(t)) && !m.refundAmount;
-        }).length;
+            if (end.isAfter(t) || end.isSame(t)) {
+                activeStudentIds.add(m.studentId);
+            }
+        });
+        return activeStudentIds.size;
     }, [memberships]);
 
     // Last 6 months trend
