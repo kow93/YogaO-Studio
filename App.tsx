@@ -229,8 +229,11 @@ const App: React.FC = () => {
                 name: newStudent.name,
                 phone: String(newStudent.phone).replace(/[^0-9]/g, '').padStart(11, '0'),
                 price: newMembership.price,
-                cash_receit_issued: newMembership.cashReceiptIssued,
-                payment_date: newMembership.paymentDate
+                payment_method: newMembership.paymentMethod,
+                cash_receipt_issued: newMembership.cashReceiptIssued,
+                payment_date: newMembership.paymentDate,
+                discount_amount: newMembership.discountAmount || 0,
+                refund_amount: newMembership.refundAmount || null
             }]);
             if (membershipError) {
                 alert("멤버십 저장 중 오류가 발생했습니다: " + membershipError.message);
@@ -295,8 +298,11 @@ const App: React.FC = () => {
                 name: student?.name || '',
                 phone: student ? String(student.phone).replace(/[^0-9]/g, '').padStart(11, '0') : '',
                 price: newMembership.price,
-                cash_receit_issued: newMembership.cashReceiptIssued,
-                payment_date: newMembership.paymentDate
+                payment_method: newMembership.paymentMethod,
+                cash_receipt_issued: newMembership.cashReceiptIssued,
+                payment_date: newMembership.paymentDate,
+                discount_amount: newMembership.discountAmount || 0,
+                refund_amount: newMembership.refundAmount || null
             }]);
             if (error) {
                 alert("멤버십 저장 중 오류가 발생했습니다: " + error.message);
@@ -362,8 +368,11 @@ const App: React.FC = () => {
                 name: student?.name || '',
                 phone: student ? String(student.phone).replace(/[^0-9]/g, '').padStart(11, '0') : '',
                 price: newMembership.price,
-                cash_receit_issued: newMembership.cashReceiptIssued,
-                payment_date: newMembership.paymentDate
+                payment_method: newMembership.paymentMethod,
+                cash_receipt_issued: newMembership.cashReceiptIssued,
+                payment_date: newMembership.paymentDate,
+                discount_amount: newMembership.discountAmount || 0,
+                refund_amount: newMembership.refundAmount || null
             }]);
             if (insertError) {
                 alert("이용권 업그레이드 저장 중 오류가 발생했습니다: " + insertError.message);
@@ -462,7 +471,9 @@ const App: React.FC = () => {
                     hold_start_date: newFullMembershipData.holdStartDate || null,
                     hold_end_date: newFullMembershipData.holdEndDate || null,
                     payment_method: newFullMembershipData.paymentMethod,
-                    cash_receit_issued: newFullMembershipData.cashReceiptIssued
+                    cash_receipt_issued: newFullMembershipData.cashReceiptIssued,
+                    discount_amount: newFullMembershipData.discountAmount || 0,
+                    refund_amount: newFullMembershipData.refundAmount || null
                 };
                 const { error } = await supabase.from('membership').update(mappedMembershipData).eq('id', membershipId);
                 if (error) {
@@ -619,10 +630,13 @@ const App: React.FC = () => {
                         name: student?.name || '',
                         phone: student ? String(student.phone).replace(/[^0-9]/g, '').padStart(11, '0') : '',
                         price: m.price,
-                        cash_receit_issued: m.cashReceiptIssued,
+                        payment_method: m.paymentMethod,
+                        cash_receipt_issued: m.cashReceiptIssued,
                         payment_date: m.paymentDate,
                         hold_start_date: m.holdStartDate,
-                        hold_end_date: m.holdEndDate
+                        hold_end_date: m.holdEndDate,
+                        discount_amount: m.discountAmount || 0,
+                        refund_amount: m.refundAmount || null
                     };
                 });
                 const { error } = await supabase.from('membership').insert(mappedMemberships);
