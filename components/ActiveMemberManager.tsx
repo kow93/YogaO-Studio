@@ -113,9 +113,9 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             
             return {
                 ...student,
-                membership: latestMembership
+                membership: latestMembership as Membership | undefined
             };
-        }).filter((s): s is (Student & { membership?: Membership }) => s !== null)
+        }).filter((s): s is (Student & { membership: Membership | undefined }) => s !== null)
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }, [students, memberships]);
 
@@ -133,16 +133,23 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         return d.isValid() ? d.format('YYYY-MM-DD') : '-';
     };
 
-    const calculateAttendanceRate = (studentId: string, passType?: PassType) => {
+    const calculateAttendanceRate = (studentId: string, passType?: PassType, registrationDate?: string) => {
         if (!passType) return '-';
-        const today = dayjs();
-        const threeMonthsAgo = today.subtract(90, 'day');
         
-        // Count attendance in last 90 days
+        const today = dayjs();
+        const dayOfWeek = today.day() === 0 ? 7 : today.day();
+        const startOfThisWeek = today.subtract(dayOfWeek - 1, 'day').startOf('day');
+        const startOfLastTwoWeeks = startOfThisWeek.subtract(14, 'day');
+        
+        if (registrationDate && dayjs(registrationDate).isAfter(startOfLastTwoWeeks)) {
+            return '데이터 확보중';
+        }
+
+        // Count attendance in last 2 weeks (excluding this week)
         const attendanceCount = attendance.filter(a => 
             a.studentId === studentId && 
-            dayjs(a.date).isAfter(threeMonthsAgo) && 
-            dayjs(a.date).isBefore(today.add(1, 'day'))
+            dayjs(a.date).isAfter(startOfLastTwoWeeks.subtract(1, 'day')) && 
+            dayjs(a.date).isBefore(startOfThisWeek)
         ).length;
 
         // Calculate expected attendance based on pass type frequency
@@ -153,14 +160,13 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         
         // If frequency is 0 (e.g. One Day, 1 Week, or unknown), just show count
         if (weeklyFrequency === 0) {
-            return `${attendanceCount}회 (최근 3개월)`;
+            return `${attendanceCount}회 (지난 2주)`;
         }
 
-        const weeks = 90 / 7;
-        const expected = weeks * weeklyFrequency;
+        const expected = 2 * weeklyFrequency;
         const rate = Math.min(100, Math.round((attendanceCount / expected) * 100));
 
-        return `${rate}% (${attendanceCount}/${Math.round(expected)})`;
+        return `${rate}% (${attendanceCount}/${expected})`;
     };
 
     const handleMemoSave = (studentId: string, newMemo: string) => {
@@ -196,7 +202,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">회원 정보</th>
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">이용권 정보</th>
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">만료일</th>
-                                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">최근 3개월 출석률</th>
+                                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">지난 2주 출석률</th>
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">비고 (Memo)</th>
                             </tr>
                         </thead>
@@ -211,7 +217,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                         <div className="text-sm font-medium text-gray-700">{member.membership?.passType || '없음'}</div>
                                         {member.membership?.holdStartDate && member.membership?.holdEndDate && (
                                             <div className="text-xs font-bold text-amber-500 mt-1">
-                                                (홀딩중 {dayjs(member.membership.holdStartDate).format('YY/MM/DD')} ~ {dayjs(member.membership.holdEndDate).format('YY/MM/DD')})
+                                                (홀딩기간 {dayjs(member.membership.holdStartDate).format('YY/MM/DD')} ~ {dayjs(member.membership.holdEndDate).format('YY/MM/DD')})
                                             </div>
                                         )}
                                     </td>
@@ -222,7 +228,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="text-sm font-bold text-indigo-600">
-                                            {calculateAttendanceRate(member.id, member.membership?.passType)}
+                                            {calculateAttendanceRate(member.id, member.membership?.passType, member.registrationDate)}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">

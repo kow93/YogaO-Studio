@@ -646,7 +646,7 @@ const StudentDetailModal: React.FC<{
                                     <h3 className="text-lg font-semibold mb-2 text-gray-700">이용권 홀딩</h3>
                                     {/* ... hold fields ... */}
                                     <p className="text-sm text-gray-500 mb-3">홀딩 기간을 설정하면 이용권 만료일이 자동으로 연장됩니다.</p>
-                                    {membership.holdStartDate && <p className="text-sm text-blue-600 mb-3">현재 홀딩: {formatDate(membership.holdStartDate)} ~ {membership.holdEndDate ? formatDate(membership.holdEndDate) : ''}</p>}
+                                    {membership.holdStartDate && <p className="text-sm text-blue-600 mb-3">현재 홀딩기간: {dayjs(membership.holdStartDate).format('YY/MM/DD')}~{membership.holdEndDate ? dayjs(membership.holdEndDate).format('YY/MM/DD') : ''}</p>}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label htmlFor="hold-start" className="block text-sm font-medium text-gray-700">홀딩 시작일</label>

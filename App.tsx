@@ -206,26 +206,36 @@ const App: React.FC = () => {
         setMemberships(prev => [...prev, newMembership]);
 
         if (supabase) {
-            await supabase.from('student').insert([{
-                id: newStudent.id,
+            const { error: studentError } = await supabase.from('student').insert([{
+                student_id: newStudent.id,
                 name: newStudent.name,
-                phone: newStudent.phone,
+                phone: String(newStudent.phone).replace(/[^0-9]/g, '').padStart(11, '0'),
                 registration_date: newStudent.registrationDate,
-                remarks: newStudent.remarks,
-                memo: newStudent.memo
+                identification: newStudent.id,
+                memo: newStudent.memo || newStudent.remarks || ''
             }]);
-            await supabase.from('membership').insert([{
+            if (studentError) {
+                alert("학생 저장 중 오류가 발생했습니다: " + studentError.message);
+                console.error(studentError);
+            }
+
+            const { error: membershipError } = await supabase.from('membership').insert([{
                 id: newMembership.id,
+                identification: newStudent.id,
                 student_id: newMembership.studentId,
                 pass_type: newMembership.passType,
                 start_date: newMembership.startDate,
                 end_date: newMembership.endDate,
+                name: newStudent.name,
+                phone: String(newStudent.phone).replace(/[^0-9]/g, '').padStart(11, '0'),
                 price: newMembership.price,
-                discount_amount: newMembership.discountAmount,
-                payment_date: newMembership.paymentDate,
-                payment_method: newMembership.paymentMethod,
-                cash_receipt_issued: newMembership.cashReceiptIssued
+                cash_receit_issued: newMembership.cashReceiptIssued,
+                payment_date: newMembership.paymentDate
             }]);
+            if (membershipError) {
+                alert("멤버십 저장 중 오류가 발생했습니다: " + membershipError.message);
+                console.error(membershipError);
+            }
         }
     }, [supabase]);
 
@@ -274,18 +284,24 @@ const App: React.FC = () => {
         setMemberships(prev => [...prev, newMembership]);
 
         if (supabase) {
-            await supabase.from('membership').insert([{
+            const student = students.find(s => s.id === newMembership.studentId);
+            const { error } = await supabase.from('membership').insert([{
                 id: newMembership.id,
+                identification: student?.id || newMembership.studentId,
                 student_id: newMembership.studentId,
                 pass_type: newMembership.passType,
                 start_date: newMembership.startDate,
                 end_date: newMembership.endDate,
+                name: student?.name || '',
+                phone: student ? String(student.phone).replace(/[^0-9]/g, '').padStart(11, '0') : '',
                 price: newMembership.price,
-                discount_amount: newMembership.discountAmount,
-                payment_date: newMembership.paymentDate,
-                payment_method: newMembership.paymentMethod,
-                cash_receipt_issued: newMembership.cashReceiptIssued
+                cash_receit_issued: newMembership.cashReceiptIssued,
+                payment_date: newMembership.paymentDate
             }]);
+            if (error) {
+                alert("멤버십 저장 중 오류가 발생했습니다: " + error.message);
+                console.error(error);
+            }
         }
     }, [memberships, supabase]);
 
@@ -331,8 +347,28 @@ const App: React.FC = () => {
         alert("이용권이 성공적으로 업그레이드 되었습니다.");
 
         if (supabase) {
-            await supabase.from('membership').update({ endDate: updatedOriginal.endDate }).eq('id', originalMembershipId);
-            await supabase.from('membership').insert([newMembership]);
+            const { error: updateError } = await supabase.from('membership').update({ end_date: updatedOriginal.endDate }).eq('id', originalMembershipId);
+            if (updateError) {
+                console.error(updateError);
+            }
+            const student = students.find(s => s.id === newMembership.studentId);
+            const { error: insertError } = await supabase.from('membership').insert([{
+                id: newMembership.id,
+                identification: student?.id || newMembership.studentId,
+                student_id: newMembership.studentId,
+                pass_type: newMembership.passType,
+                start_date: newMembership.startDate,
+                end_date: newMembership.endDate,
+                name: student?.name || '',
+                phone: student ? String(student.phone).replace(/[^0-9]/g, '').padStart(11, '0') : '',
+                price: newMembership.price,
+                cash_receit_issued: newMembership.cashReceiptIssued,
+                payment_date: newMembership.paymentDate
+            }]);
+            if (insertError) {
+                alert("이용권 업그레이드 저장 중 오류가 발생했습니다: " + insertError.message);
+                console.error(insertError);
+            }
         }
     }, [memberships, supabase]);
 
@@ -342,9 +378,19 @@ const App: React.FC = () => {
         setAttendance(prevAttendance => prevAttendance.filter(record => record.studentId !== studentIdToDelete));
 
         if (supabase) {
-            await supabase.from('student').delete().eq('id', studentIdToDelete);
-            await supabase.from('membership').delete().eq('student_id', studentIdToDelete);
-            await supabase.from('attendance').delete().eq('student_id', studentIdToDelete);
+            const { error: sError } = await supabase.from('student').delete().eq('student_id', studentIdToDelete);
+            if (sError) {
+                alert("학생 삭제 중 오류가 발생했습니다: " + sError.message);
+                console.error(sError);
+            }
+            const { error: mError } = await supabase.from('membership').delete().eq('student_id', studentIdToDelete);
+            if (mError) {
+                console.error(mError);
+            }
+            const { error: aError } = await supabase.from('attendance').delete().eq('student_id', studentIdToDelete);
+            if (aError) {
+                console.error(aError);
+            }
         }
     }, [supabase]);
     
@@ -397,7 +443,15 @@ const App: React.FC = () => {
 
         if (supabase) {
             if (Object.keys(updatedStudentData).length > 0) {
-                await supabase.from('student').update(updatedStudentData).eq('id', studentId);
+                const mappedStudentData: any = { ...updatedStudentData };
+                if (updatedStudentData.phone) {
+                    mappedStudentData.phone = String(updatedStudentData.phone).replace(/[^0-9]/g, '').padStart(11, '0');
+                }
+                const { error } = await supabase.from('student').update(mappedStudentData).eq('student_id', studentId);
+                if (error) {
+                    alert("학생 정보 수정 중 오류가 발생했습니다: " + error.message);
+                    console.error(error);
+                }
             }
             if (newFullMembershipData) {
                 const mappedMembershipData = {
@@ -408,9 +462,13 @@ const App: React.FC = () => {
                     hold_start_date: newFullMembershipData.holdStartDate || null,
                     hold_end_date: newFullMembershipData.holdEndDate || null,
                     payment_method: newFullMembershipData.paymentMethod,
-                    cash_receipt_issued: newFullMembershipData.cashReceiptIssued
+                    cash_receit_issued: newFullMembershipData.cashReceiptIssued
                 };
-                await supabase.from('membership').update(mappedMembershipData).eq('id', membershipId);
+                const { error } = await supabase.from('membership').update(mappedMembershipData).eq('id', membershipId);
+                if (error) {
+                    alert("멤버십 정보 수정 중 오류가 발생했습니다: " + error.message);
+                    console.error(error);
+                }
             }
         }
     }, [memberships, supabase]);
@@ -466,10 +524,12 @@ const App: React.FC = () => {
 
         if (supabase) {
             for (const s of updatedStudents) {
-                await supabase.from('student').update({ remarks: s.remarks }).eq('id', s.id);
+                const { error } = await supabase.from('student').update({ memo: s.remarks }).eq('student_id', s.id);
+                if (error) console.error(error);
             }
             for (const m of updatedMemberships) {
-                await supabase.from('membership').update({ endDate: m.endDate }).eq('id', m.id);
+                const { error } = await supabase.from('membership').update({ end_date: m.endDate }).eq('id', m.id);
+                if (error) console.error(error);
             }
         }
     }, [memberships, supabase]);
@@ -533,32 +593,43 @@ const App: React.FC = () => {
         if (supabase) {
             if (newStudents.length > 0) {
                 const mappedStudents = newStudents.map(s => ({
-                    id: s.id,
+                    student_id: s.id,
                     name: s.name,
-                    phone: s.phone,
+                    phone: String(s.phone).replace(/[^0-9]/g, '').padStart(11, '0'),
                     registration_date: s.registrationDate,
-                    remarks: s.remarks,
-                    memo: s.memo
+                    identification: s.id,
+                    memo: s.memo || s.remarks || ''
                 }));
-                await supabase.from('student').insert(mappedStudents);
+                const { error } = await supabase.from('student').insert(mappedStudents);
+                if (error) {
+                    alert("학생 데이터 가져오기 중 오류가 발생했습니다: " + error.message);
+                    console.error(error);
+                }
             }
             if (newMemberships.length > 0) {
-                const mappedMemberships = newMemberships.map(m => ({
-                    id: m.id,
-                    student_id: m.studentId,
-                    pass_type: m.passType,
-                    start_date: m.startDate,
-                    end_date: m.endDate,
-                    price: m.price,
-                    discount_amount: m.discountAmount,
-                    refund_amount: m.refundAmount,
-                    payment_date: m.paymentDate,
-                    hold_start_date: m.holdStartDate,
-                    hold_end_date: m.holdEndDate,
-                    payment_method: m.paymentMethod,
-                    cash_receipt_issued: m.cashReceiptIssued
-                }));
-                await supabase.from('membership').insert(mappedMemberships);
+                const mappedMemberships = newMemberships.map(m => {
+                    const student = newStudents.find(s => s.id === m.studentId) || students.find(s => s.id === m.studentId);
+                    return {
+                        id: m.id,
+                        identification: student?.id || m.studentId,
+                        student_id: m.studentId,
+                        pass_type: m.passType,
+                        start_date: m.startDate,
+                        end_date: m.endDate,
+                        name: student?.name || '',
+                        phone: student ? String(student.phone).replace(/[^0-9]/g, '').padStart(11, '0') : '',
+                        price: m.price,
+                        cash_receit_issued: m.cashReceiptIssued,
+                        payment_date: m.paymentDate,
+                        hold_start_date: m.holdStartDate,
+                        hold_end_date: m.holdEndDate
+                    };
+                });
+                const { error } = await supabase.from('membership').insert(mappedMemberships);
+                if (error) {
+                    alert("멤버십 데이터 가져오기 중 오류가 발생했습니다: " + error.message);
+                    console.error(error);
+                }
             }
         }
     }, [supabase]);
@@ -588,7 +659,22 @@ const App: React.FC = () => {
         });
 
         if (supabase && newRecordsToInsert.length > 0) {
-            await supabase.from('attendance').insert(newRecordsToInsert);
+            const mappedAttendance = newRecordsToInsert.map(r => {
+                const student = students.find(s => s.id === r.studentId);
+                return {
+                    attendance_id: r.id,
+                    student_id: r.studentId,
+                    attendance_date: r.date,
+                    class_info: r.classTime,
+                    name: student?.name || '',
+                    phone: student ? String(student.phone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
+                };
+            });
+            const { error } = await supabase.from('attendance').insert(mappedAttendance);
+            if (error) {
+                alert("출석 데이터 가져오기 중 오류가 발생했습니다: " + error.message);
+                console.error(error);
+            }
         }
    }, [supabase]);
    
@@ -625,7 +711,17 @@ const App: React.FC = () => {
         });
 
         if (supabase && newExpensesToInsert.length > 0) {
-            await supabase.from('expense').insert(newExpensesToInsert);
+            const mappedExpenses = newExpensesToInsert.map(e => ({
+                날짜: e.date,
+                분류: e.category,
+                내용: e.description,
+                금액: e.amount
+            }));
+            const { error } = await supabase.from('expense').insert(mappedExpenses);
+            if (error) {
+                alert("지출 데이터 가져오기 중 오류가 발생했습니다: " + error.message);
+                console.error(error);
+            }
         }
    }, [supabase]);
 
@@ -640,7 +736,11 @@ const App: React.FC = () => {
         if (exists) {
             setAttendance(prev => prev.filter(a => a.id !== exists.id));
             if (supabase) {
-                await supabase.from('attendance').delete().eq('id', exists.id);
+                const { error } = await supabase.from('attendance').delete().eq('attendance_id', exists.id);
+                if (error) {
+                    alert("출석 삭제 중 오류가 발생했습니다: " + error.message);
+                    console.error(error);
+                }
             }
         } else {
             const student = students.find(s => s.id === studentId);
@@ -655,15 +755,18 @@ const App: React.FC = () => {
             };
             setAttendance(prev => [...prev, newRecord]);
             if (supabase) {
-                await supabase.from('attendance').insert([{
-                    id: newRecord.id,
+                const { error } = await supabase.from('attendance').insert([{
+                    attendance_id: newRecord.id,
                     student_id: newRecord.studentId,
                     attendance_date: newRecord.date,
                     class_info: newRecord.classTime,
-                    class_id: newRecord.classId,
-                    name: newRecord.studentName,
-                    phone: newRecord.studentPhone
+                    name: newRecord.studentName || '',
+                    phone: newRecord.studentPhone ? String(newRecord.studentPhone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
                 }]);
+                if (error) {
+                    alert("출석 저장 중 오류가 발생했습니다: " + error.message);
+                    console.error(error);
+                }
             }
         }
     }, [attendance, supabase, students]);
@@ -706,7 +809,19 @@ const App: React.FC = () => {
     const updateStudent = useCallback(async (studentId: string, updates: Partial<Student>) => {
         setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updates } : s));
         if (supabase) {
-            await supabase.from('student').update(updates).eq('id', studentId);
+            const mappedUpdates: any = { ...updates };
+            if (updates.phone) {
+                mappedUpdates.phone = String(updates.phone).replace(/[^0-9]/g, '').padStart(11, '0');
+            }
+            if (updates.remarks) {
+                mappedUpdates.memo = updates.remarks;
+                delete mappedUpdates.remarks;
+            }
+            const { error } = await supabase.from('student').update(mappedUpdates).eq('student_id', studentId);
+            if (error) {
+                alert("학생 정보 수정 중 오류가 발생했습니다: " + error.message);
+                console.error(error);
+            }
         }
     }, [supabase]);
 
@@ -714,28 +829,44 @@ const App: React.FC = () => {
         const newExpense = { ...expense, id: crypto.randomUUID() };
         setExpenses(prev => [...prev, newExpense]);
         if (supabase) {
-            await supabase.from('expense').insert([{
-                id: newExpense.id,
+            const { error } = await supabase.from('expense').insert([{
                 날짜: newExpense.date,
                 분류: newExpense.category,
                 내용: newExpense.description,
                 금액: newExpense.amount
             }]);
+            if (error) {
+                alert("지출 저장 중 오류가 발생했습니다: " + error.message);
+                console.error(error);
+            }
         }
     }, [supabase]);
 
     const deleteExpense = useCallback(async (expenseId: string) => {
+        const expenseToDelete = expenses.find(e => e.id === expenseId);
         setExpenses(prev => prev.filter(e => e.id !== expenseId));
-        if (supabase) {
-            await supabase.from('expense').delete().eq('id', expenseId);
+        if (supabase && expenseToDelete) {
+            const { error } = await supabase.from('expense').delete()
+                .eq('날짜', expenseToDelete.date)
+                .eq('분류', expenseToDelete.category)
+                .eq('내용', expenseToDelete.description)
+                .eq('금액', expenseToDelete.amount);
+            if (error) {
+                alert("지출 삭제 중 오류가 발생했습니다: " + error.message);
+                console.error(error);
+            }
         }
-    }, [supabase]);
+    }, [expenses, supabase]);
 
     const refundMembership = useCallback(async (membershipId: string, refundAmount: number) => {
         const amount = parseAmount(refundAmount);
         setMemberships(prev => prev.map(m => m.id === membershipId ? { ...m, refundAmount: amount } : m));
         if (supabase) {
-            await supabase.from('membership').update({ refund_amount: amount }).eq('id', membershipId);
+            const { error } = await supabase.from('membership').update({ refund_amount: amount }).eq('id', membershipId);
+            if (error) {
+                alert("환불 처리 중 오류가 발생했습니다: " + error.message);
+                console.error(error);
+            }
         }
         alert("환불 처리가 완료되었습니다.");
     }, [supabase]);

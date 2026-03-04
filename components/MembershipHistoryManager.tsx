@@ -172,7 +172,7 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
                                                                         </div>
                                                                         {item.holdStartDate && item.holdEndDate && (
                                                                             <div className="text-[10px] font-bold text-amber-500 mt-1">
-                                                                                (홀딩중 {formatDate(item.holdStartDate)} ~ {formatDate(item.holdEndDate)})
+                                                                                (홀딩기간 {formatDate(item.holdStartDate)} ~ {formatDate(item.holdEndDate)})
                                                                             </div>
                                                                         )}
                                                                     </td>
@@ -285,6 +285,8 @@ const AddMembershipModal: React.FC<{
 }> = ({ students, onClose, onAddStudent, onAddMembership }) => {
     const [isNewStudent, setIsNewStudent] = useState(true);
     const [selectedStudentId, setSelectedStudentId] = useState('');
+    const [studentSearchTerm, setStudentSearchTerm] = useState('');
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [passType, setPassType] = useState(PassType.MONTHLY_3_PER_WEEK);
@@ -299,6 +301,10 @@ const AddMembershipModal: React.FC<{
         if (isNewStudent) {
             onAddStudent({ name, phone }, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued, discountAmount);
         } else {
+            if (!selectedStudentId) {
+                alert('회원을 선택해주세요.');
+                return;
+            }
             onAddMembership(selectedStudentId, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued, undefined, discountAmount);
         }
         onClose();
@@ -358,19 +364,41 @@ const AddMembershipModal: React.FC<{
                                 </div>
                             </>
                         ) : (
-                            <div className="col-span-2">
-                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">회원 선택</label>
-                                <select
-                                    required
-                                    value={selectedStudentId}
-                                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                            <div className="col-span-2 relative">
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">회원 검색</label>
+                                <input
+                                    type="text"
+                                    placeholder="회원 이름 또는 연락처 검색"
+                                    value={studentSearchTerm}
+                                    onChange={e => {
+                                        setStudentSearchTerm(e.target.value);
+                                        setIsDropdownOpen(true);
+                                        setSelectedStudentId('');
+                                    }}
+                                    onFocus={() => setIsDropdownOpen(true)}
+                                    onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
                                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                                >
-                                    <option value="">회원을 선택하세요</option>
-                                    {students.map(s => (
-                                        <option key={s.id} value={s.id}>{s.name} ({s.phone})</option>
-                                    ))}
-                                </select>
+                                />
+                                {isDropdownOpen && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                                        {students.filter(s => s.name.includes(studentSearchTerm) || s.phone.includes(studentSearchTerm)).map(s => (
+                                            <div 
+                                                key={s.id} 
+                                                className="px-4 py-3 hover:bg-gray-50 cursor-pointer text-sm"
+                                                onClick={() => {
+                                                    setSelectedStudentId(s.id);
+                                                    setStudentSearchTerm(`${s.name} (${s.phone})`);
+                                                    setIsDropdownOpen(false);
+                                                }}
+                                            >
+                                                {s.name} ({s.phone})
+                                            </div>
+                                        ))}
+                                        {students.filter(s => s.name.includes(studentSearchTerm) || s.phone.includes(studentSearchTerm)).length === 0 && (
+                                            <div className="px-4 py-3 text-sm text-gray-500">검색 결과가 없습니다.</div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
