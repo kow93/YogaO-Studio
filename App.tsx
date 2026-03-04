@@ -232,7 +232,6 @@ const App: React.FC = () => {
                 payment_method: newMembership.paymentMethod,
                 cash_receipt_issued: newMembership.cashReceiptIssued,
                 payment_date: newMembership.paymentDate,
-                discount_amount: newMembership.discountAmount || 0,
                 refund_amount: newMembership.refundAmount || null
             }]);
             if (membershipError) {
@@ -301,7 +300,6 @@ const App: React.FC = () => {
                 payment_method: newMembership.paymentMethod,
                 cash_receipt_issued: newMembership.cashReceiptIssued,
                 payment_date: newMembership.paymentDate,
-                discount_amount: newMembership.discountAmount || 0,
                 refund_amount: newMembership.refundAmount || null
             }]);
             if (error) {
@@ -371,7 +369,6 @@ const App: React.FC = () => {
                 payment_method: newMembership.paymentMethod,
                 cash_receipt_issued: newMembership.cashReceiptIssued,
                 payment_date: newMembership.paymentDate,
-                discount_amount: newMembership.discountAmount || 0,
                 refund_amount: newMembership.refundAmount || null
             }]);
             if (insertError) {
@@ -472,7 +469,6 @@ const App: React.FC = () => {
                     hold_end_date: newFullMembershipData.holdEndDate || null,
                     payment_method: newFullMembershipData.paymentMethod,
                     cash_receipt_issued: newFullMembershipData.cashReceiptIssued,
-                    discount_amount: newFullMembershipData.discountAmount || 0,
                     refund_amount: newFullMembershipData.refundAmount || null
                 };
                 const { error } = await supabase.from('membership').update(mappedMembershipData).eq('id', membershipId);
@@ -635,7 +631,6 @@ const App: React.FC = () => {
                         payment_date: m.paymentDate,
                         hold_start_date: m.holdStartDate,
                         hold_end_date: m.holdEndDate,
-                        discount_amount: m.discountAmount || 0,
                         refund_amount: m.refundAmount || null
                     };
                 });
@@ -678,6 +673,7 @@ const App: React.FC = () => {
                 return {
                     attendance_id: r.id,
                     student_id: r.studentId,
+                    identification: r.studentId,
                     attendance_date: r.date,
                     class_info: r.classTime,
                     name: student?.name || '',
