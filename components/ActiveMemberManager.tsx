@@ -101,11 +101,29 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
     };
 
     const activeMembers = useMemo(() => {
+        const today = dayjs().startOf('day');
         return students.map(student => {
             if (!student) return null;
             
-            const studentMemberships = memberships.filter(m => m.studentId === student.id && !m.refundAmount);
+            const studentMemberships = memberships.filter(m => {
+                if (m.studentId !== student.id || m.refundAmount) return false;
+                
+                const endDate = dayjs(m.endDate).startOf('day');
+                
+                // Check if currently holding
+                if (m.holdStartDate && m.holdEndDate) {
+                    const holdStart = dayjs(m.holdStartDate).startOf('day');
+                    const holdEnd = dayjs(m.holdEndDate).startOf('day');
+                    if ((today.isAfter(holdStart) || today.isSame(holdStart)) && (today.isBefore(holdEnd) || today.isSame(holdEnd))) {
+                        return true; // Keep in list if holding
+                    }
+                }
+                
+                return endDate.isAfter(today) || endDate.isSame(today);
+            });
             
+            if (studentMemberships.length === 0) return null;
+
             // Sort by end date descending to find the latest one
             const latestMembership = studentMemberships.sort((a, b) => 
                 dayjs(b.endDate).valueOf() - dayjs(a.endDate).valueOf()
@@ -113,9 +131,9 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             
             return {
                 ...student,
-                membership: latestMembership as Membership | undefined
+                membership: latestMembership as Membership
             };
-        }).filter((s): s is (Student & { membership: Membership | undefined }) => s !== null)
+        }).filter((s): s is (Student & { membership: Membership }) => s !== null)
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }, [students, memberships]);
 
@@ -178,7 +196,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             <div className="flex justify-between items-end">
                 <div>
                     <h2 className="text-3xl font-bold text-gray-900">유효 회원 관리</h2>
-                    <p className="text-gray-500 mt-1">현재 이용권이 유효한 회원 목록</p>
+                    <p className="text-gray-500 mt-1">현재 유효 회원 총 {activeMembers.length}명</p>
                 </div>
                 <div className="flex gap-4">
                     <div className="relative">

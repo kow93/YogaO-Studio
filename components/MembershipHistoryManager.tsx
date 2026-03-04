@@ -70,11 +70,11 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
 
         // Convert to array and sort
         return Object.values(grouped).map(group => {
-            // Sort memberships within each group by date ascending
+            // Sort memberships within each group by date descending (newest first)
             group.memberships.sort((a, b) => {
                 const dateA = dayjs(a.paymentDate || a.startDate).valueOf();
                 const dateB = dayjs(b.paymentDate || b.startDate).valueOf();
-                return dateA - dateB;
+                return dateB - dateA;
             });
             return group;
         }).sort((a, b) => (a.student.name || '').localeCompare(b.student.name || ''));
@@ -94,7 +94,7 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
             <div className="flex justify-between items-end">
                 <div>
                     <h2 className="text-3xl font-bold text-gray-900">멤버십(결제) 관리</h2>
-                    <p className="text-gray-500 mt-1">회원별 결제 내역 및 신규 이용권 등록</p>
+                    <p className="text-gray-500 mt-1">모든 회원의 전체 결제 내역 및 신규 이용권 등록</p>
                 </div>
                 <div className="flex gap-4">
                     <div className="relative">
