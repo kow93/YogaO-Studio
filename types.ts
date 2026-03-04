@@ -31,6 +31,7 @@ export interface Membership {
   price: number;
   discountAmount?: number;
   refundAmount?: number;
+  refundReason?: string;
   paymentDate?: string; // ISO string
   holdStartDate?: string;
   holdEndDate?: string;

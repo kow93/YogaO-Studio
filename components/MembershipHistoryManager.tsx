@@ -10,7 +10,7 @@ interface MembershipHistoryManagerProps {
     memberships: Membership[];
     addStudent: (studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, discountAmount: number) => void;
     addMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, customPrice?: number, discountAmount?: number) => void;
-    refundMembership: (membershipId: string, refundAmount: number) => void;
+    refundMembership: (membershipId: string, refundAmount: number, refundReason: string) => void;
 }
 
 export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> = ({
@@ -24,6 +24,7 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
     const [showAddModal, setShowAddModal] = useState(false);
     const [showRefundModal, setShowRefundModal] = useState<{ id: string, name: string } | null>(null);
     const [refundAmount, setRefundAmount] = useState(0);
+    const [refundReason, setRefundReason] = useState('');
     const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
 
     const formatDate = (dateStr: string | undefined) => {
@@ -252,6 +253,15 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
                                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-lg"
                                 />
                             </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">환불 사유</label>
+                                <input
+                                    type="text"
+                                    value={refundReason}
+                                    onChange={(e) => setRefundReason(e.target.value)}
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-lg"
+                                />
+                            </div>
                             <div className="flex gap-3 pt-4">
                                 <button
                                     onClick={() => setShowRefundModal(null)}
@@ -261,7 +271,7 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
                                 </button>
                                 <button
                                     onClick={() => {
-                                        refundMembership(showRefundModal.id, refundAmount);
+                                        refundMembership(showRefundModal.id, refundAmount, refundReason);
                                         setShowRefundModal(null);
                                     }}
                                     className="flex-1 px-4 py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition-all shadow-lg shadow-rose-100"

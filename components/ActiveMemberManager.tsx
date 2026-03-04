@@ -109,6 +109,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                 if (m.studentId !== student.id || m.refundAmount) return false;
                 
                 const endDate = dayjs(m.endDate).startOf('day');
+                const today = dayjs().startOf('day');
                 
                 // Check if currently holding
                 if (m.holdStartDate && m.holdEndDate) {

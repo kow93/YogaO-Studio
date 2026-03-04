@@ -868,18 +868,33 @@ const App: React.FC = () => {
         }
     }, [expenses, supabase]);
 
-    const refundMembership = useCallback(async (membershipId: string, refundAmount: number) => {
+    const refundMembership = useCallback(async (membershipId: string, refundAmount: number, refundReason: string) => {
         const amount = parseAmount(refundAmount);
-        setMemberships(prev => prev.map(m => m.id === membershipId ? { ...m, refundAmount: amount } : m));
+        setMemberships(prev => prev.map(m => m.id === membershipId ? { ...m, refundAmount: amount, refundReason } : m));
         if (supabase) {
+            const membership = memberships.find(m => m.id === membershipId);
             const { error } = await supabase.from('membership').update({ refund_amount: amount }).eq('id', membershipId);
             if (error) {
                 alert("환불 처리 중 오류가 발생했습니다: " + error.message);
                 console.error(error);
+                return;
+            }
+            if (membership) {
+                const { error: refundError } = await supabase.from('refund_amount').insert([{
+                    student_id: membership.studentId,
+                    membership_id: membershipId,
+                    refund_amount: amount,
+                    refund_date: new Date().toISOString(),
+                    refund_reason: refundReason
+                }]);
+                if (refundError) {
+                    alert("환불 내역 저장 중 오류가 발생했습니다: " + refundError.message);
+                    console.error(refundError);
+                }
             }
         }
         alert("환불 처리가 완료되었습니다.");
-    }, [supabase]);
+    }, [supabase, memberships]);
 
     const renderContent = () => {
         switch (view) {
