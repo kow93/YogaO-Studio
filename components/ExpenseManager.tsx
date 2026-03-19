@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import dayjs from 'dayjs';
 import { Expense, ExpenseCategory } from '../types';
 import { EXPENSE_CATEGORIES_OPTIONS } from '../constants';
@@ -45,7 +45,7 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
 
     const [currentMonth, setCurrentMonth] = useState(dayjs());
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         if (date && category && description && amount) {
             addExpense({
@@ -59,22 +59,23 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
             setDescription('');
             setAmount('');
         }
-    };
+    }, [date, category, description, amount, addExpense]);
     
     const filteredExpenses = useMemo(() => {
+        const search = (searchTerm || '').toLowerCase();
         return expenses
             .filter(e => dayjs(e.date).isSame(currentMonth, 'month'))
-            .filter(e => (e.description || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || (e.category || '').includes(searchTerm))
+            .filter(e => (e.description || '').toLowerCase().includes(search) || (e.category || '').toLowerCase().includes(search))
             .sort((a,b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf());
     }, [expenses, searchTerm, currentMonth]);
 
-    const formatCurrency = (value: number | string) => {
+    const formatCurrency = useCallback((value: number | string) => {
         const numValue = typeof value === 'string' ? parseFloat(value.replace(/[^0-9.-]+/g, "")) : value;
         if (isNaN(numValue)) return '0원';
         return numValue.toLocaleString() + '원';
-    };
+    }, []);
 
-    const handleExport = () => {
+    const handleExport = useCallback(() => {
         if (expenses.length === 0) {
             alert('내보낼 지출 내역이 없습니다.');
             return;
@@ -103,9 +104,9 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    };
+    }, [expenses]);
 
-    const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
@@ -144,7 +145,7 @@ export const ExpenseManager: React.FC<ExpenseManagerProps> = ({ expenses, addExp
         };
         reader.readAsText(file, 'UTF-8');
         event.target.value = '';
-    };
+    }, [importExpenses]);
 
     return (
         <div className="space-y-8">

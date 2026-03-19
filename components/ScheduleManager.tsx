@@ -53,46 +53,6 @@ function parseCsvLine(line: string): string[] {
     return result;
 }
 
-const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, targetDate: string) => {
-    const toISODate = (d: any) => {
-        if (!d) return '';
-        // The Golden Rule: Always format to YYYY-MM-DD for comparison
-        const parsed = dayjs(d);
-        return parsed.isValid() ? parsed.format('YYYY-MM-DD') : '';
-    };
-
-    const rDate = toISODate(record.date);
-    const tDate = toISODate(targetDate);
-
-    if (rDate !== tDate) return false;
-
-    // 1순위: 정확한 classId 매칭
-    if (record.classId && classItem.id && record.classId === classItem.id) return true;
-
-    // 2순위: 고유 식별자 생성 비교 ([날짜]-[시간]-[수업이름])
-    const recordTimeMatch = String(record.classTime || '').match(/^(\d{2}:\d{2})/);
-    const recordTime = recordTimeMatch ? recordTimeMatch[1] : '';
-    const recordName = String(record.classTime || '').split(' - ')[1] || String(record.classTime || '');
-    const recordGeneratedId = record.classId || `${rDate}-${recordTime}-${recordName}`;
-    
-    const targetGeneratedId = classItem.id || `${tDate}-${classItem.startTime}-${classItem.className}`;
-    
-    if (recordGeneratedId === targetGeneratedId) return true;
-
-    // 3순위: 정규식을 사용한 시간 및 이름 분리 매칭 (과거 데이터 호환)
-    const rawDbInfo = String(record.classTime || '');
-    const regex = /^(\d{2}:\d{2})\s*-\s*(.*)$/;
-    const match = rawDbInfo.match(regex);
-    
-    if (match) {
-        const dbTime = match[1];
-        const dbName = match[2].trim();
-        return dbTime === classItem.startTime && dbName === classItem.className;
-    }
-
-    return false;
-};
-
 export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
     const [currentDate, setCurrentDate] = useState(dayjs());
     const [modalInfo, setModalInfo] = useState<{ type: 'attendance' | 'edit'; data: any } | null>(null);
@@ -213,7 +173,10 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {
         const classTimeString = `${classItem.startTime} - ${classItem.className}`;
         
         // User requested loose match on classTime string as primary matching logic
-        const attendanceCount = props.attendance.filter(a => isLooseMatch(a, classItem, dateString)).length;
+        const attendanceCount = props.attendance.filter(a => {
+            const aDate = dayjs(a.date).format('YYYY-MM-DD');
+            return aDate === dateString && a.classId === classItem.id;
+        }).length;
 
         return (
             <div
@@ -342,9 +305,12 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
             });
         });
 
-        // 2. Get attended students for this specific class
+        // 2. Get attended students for this specific class using strict 1:1 comparison
         const attended = attendance
-            .filter(a => isLooseMatch(a, classItem, dateString))
+            .filter(a => {
+                const aDate = dayjs(a.date).format('YYYY-MM-DD');
+                return aDate === dateString && a.classId === classItem.id;
+            })
             .map(a => {
                 const s = students.find(s => s.id === a.studentId);
                 // Prioritize student record, but fallback to attendance record info
@@ -368,8 +334,8 @@ const ClassAttendanceModal: React.FC<ScheduleManagerProps & { isOpen: boolean; o
     }, [students, memberships, date, searchTerm, attendance, dateString, classTimeString, classItem.id]);
     
     const isAttended = (studentId: string) => attendance.some(a => {
-        const isStudentMatch = a.studentId === studentId;
-        return isStudentMatch && isLooseMatch(a, classItem, dateString);
+        const aDate = dayjs(a.date).format('YYYY-MM-DD');
+        return a.studentId === studentId && aDate === dateString && a.classId === classItem.id;
     });
 
     if (!isOpen) return null;

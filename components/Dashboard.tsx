@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import dayjs from 'dayjs';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -53,16 +53,16 @@ const MetricCard: React.FC<{
 };
 
 export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, expenses, attendance, schedule }) => {
-    const today = dayjs().utcOffset(9);
+    const today = useMemo(() => dayjs().utcOffset(9), []);
     const currentMonth = today.month();
     const currentYear = today.year();
 
-    const lastMonthDate = today.subtract(1, 'month');
+    const lastMonthDate = useMemo(() => today.subtract(1, 'month'), [today]);
     const lastMonth = lastMonthDate.month();
     const lastMonthYear = lastMonthDate.year();
 
     // Helper to get metrics for a specific month
-    const getMonthMetrics = (month: number, year: number) => {
+    const getMonthMetrics = useCallback((month: number, year: number) => {
         const monthMemberships = memberships.filter(m => {
             const d = dayjs(m.paymentDate || m.startDate);
             return d.month() === month && d.year() === year;
@@ -76,18 +76,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
         const expense = monthExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
         
         return { revenue, expense, profit: revenue - expense };
-    };
+    }, [memberships, expenses]);
 
-    const currentMetrics = getMonthMetrics(currentMonth, currentYear);
-    const lastMetrics = getMonthMetrics(lastMonth, lastMonthYear);
+    const currentMetrics = useMemo(() => getMonthMetrics(currentMonth, currentYear), [getMonthMetrics, currentMonth, currentYear]);
+    const lastMetrics = useMemo(() => getMonthMetrics(lastMonth, lastMonthYear), [getMonthMetrics, lastMonth, lastMonthYear]);
 
-    const calculateChange = (current: number, last: number) => {
+    const calculateChange = useCallback((current: number, last: number) => {
         if (last === 0) return current > 0 ? 100 : 0;
         return ((current - last) / last) * 100;
-    };
+    }, []);
 
     const activeMembersCount = useMemo(() => {
-        const t = dayjs().utcOffset(9).startOf('day');
+        const t = today.startOf('day');
         const activeStudentIds = new Set();
         memberships.forEach(m => {
             if (!m.endDate || m.refundAmount) return;
@@ -97,7 +97,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
             }
         });
         return activeStudentIds.size;
-    }, [memberships]);
+    }, [memberships, today]);
 
     // Last 6 months trend
     const trendData = useMemo(() => {
@@ -115,7 +115,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
             });
         }
         return data;
-    }, [memberships, expenses, today]);
+    }, [getMonthMetrics, today]);
 
     // Membership distribution
     const pieData = useMemo(() => {

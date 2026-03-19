@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
@@ -71,7 +71,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         holdEndDate: '',
     });
 
-    const openEditModal = (member: Student & { membership?: Membership }) => {
+    const openEditModal = useCallback((member: Student & { membership?: Membership }) => {
         if (!member.membership) {
             alert("이용권 정보가 없는 회원입니다. 멤버십 관리 탭에서 이용권을 먼저 등록해주세요.");
             return;
@@ -86,9 +86,9 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             holdStartDate: member.membership.holdStartDate ? dayjs(member.membership.holdStartDate).format('YYYY-MM-DD') : '',
             holdEndDate: member.membership.holdEndDate ? dayjs(member.membership.holdEndDate).format('YYYY-MM-DD') : '',
         });
-    };
+    }, []);
 
-    const handleEditSubmit = () => {
+    const handleEditSubmit = useCallback(() => {
         if (!editingMember || !editingMember.membership || !updateStudentAndMembership) return;
         
         const membershipUpdates: Partial<Membership> = {
@@ -113,9 +113,9 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             membershipUpdates
         );
         setEditingMember(null);
-    };
+    }, [editingMember, editForm, updateStudentAndMembership]);
 
-    const calculateUpgradeInfo = () => {
+    const upgradeInfo = useMemo(() => {
         if (!editingMember?.membership) return null;
         const original = editingMember.membership;
         const today = dayjs().tz('Asia/Seoul');
@@ -130,14 +130,14 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         const upgradeCost = newFullPrice - remainingValue;
 
         return { remainingValue, upgradeCost };
-    };
+    }, [editingMember, upgradePassType]);
 
-    const handleUpgrade = () => {
+    const handleUpgrade = useCallback(() => {
         if (!editingMember?.membership || !upgradeMembership) return;
         upgradeMembership(editingMember.membership.id, upgradePassType, upgradePaymentMethod, upgradeCashReceipt);
         setEditingMember(null);
         setShowUpgradeUI(false);
-    };
+    }, [editingMember, upgradeMembership, upgradePassType, upgradePaymentMethod, upgradeCashReceipt]);
 
     const activeMembers = useMemo(() => {
         const today = dayjs().startOf('day');
@@ -473,7 +473,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                         </div>
                                         <div>
                                             <p className="text-gray-500 text-xs">남은 가치 (일할 계산)</p>
-                                            <p className="font-bold text-indigo-600">{calculateUpgradeInfo()?.remainingValue.toLocaleString()}원</p>
+                                            <p className="font-bold text-indigo-600">{upgradeInfo?.remainingValue.toLocaleString()}원</p>
                                         </div>
                                     </div>
                                 </div>
@@ -528,7 +528,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                     <div className="flex justify-between items-center">
                                         <span className="text-sm font-bold text-emerald-800">최종 업그레이드 결제 금액</span>
                                         <span className="text-2xl font-black text-emerald-600">
-                                            {calculateUpgradeInfo()?.upgradeCost.toLocaleString()}원
+                                            {upgradeInfo?.upgradeCost.toLocaleString()}원
                                         </span>
                                     </div>
                                     <p className="text-[10px] text-emerald-600 mt-2 font-medium">
@@ -545,7 +545,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                     </button>
                                     <button
                                         onClick={handleUpgrade}
-                                        disabled={calculateUpgradeInfo()?.upgradeCost! < 0}
+                                        disabled={upgradeInfo?.upgradeCost! < 0}
                                         className="flex-1 px-6 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         업그레이드 확정

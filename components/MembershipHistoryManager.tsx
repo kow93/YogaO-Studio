@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
@@ -20,6 +20,12 @@ interface MembershipHistoryManagerProps {
     refundMembership: (membershipId: string, refundAmount: number, refundReason: string) => void;
 }
 
+const formatDate = (dateStr: string | undefined) => {
+    if (!dateStr) return '-';
+    const d = dayjs(dateStr).tz('Asia/Seoul');
+    return d.isValid() ? d.format('YYYY-MM-DD') : '-';
+};
+
 export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> = ({
     students,
     memberships,
@@ -33,12 +39,6 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
     const [refundAmount, setRefundAmount] = useState(0);
     const [refundReason, setRefundReason] = useState('');
     const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
-
-    const formatDate = (dateStr: string | undefined) => {
-        if (!dateStr) return '-';
-        const d = dayjs(dateStr);
-        return d.isValid() ? d.format('YYYY-MM-DD') : '-';
-    };
 
     const groupedHistory = useMemo(() => {
         // Group memberships by studentId using reduce
@@ -88,16 +88,18 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
         }).sort((a, b) => (a.student.name || '').localeCompare(b.student.name || ''));
     }, [memberships, students]);
 
-    const filteredGroups = groupedHistory.filter(g => 
-        (g.student.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
-        (g.student.phone || '').includes(searchTerm)
-    );
+    const filteredGroups = useMemo(() => {
+        return groupedHistory.filter(g => 
+            (g.student.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+            (g.student.phone || '').includes(searchTerm)
+        );
+    }, [groupedHistory, searchTerm]);
 
-    const toggleExpand = (studentId: string) => {
+    const toggleExpand = useCallback((studentId: string) => {
         setExpandedStudentId(prev => prev === studentId ? null : studentId);
-    };
+    }, []);
 
-    const exportToExcel = () => {
+    const exportToExcel = useCallback(() => {
         const data = memberships.map(m => {
             const student = students.find(s => s.id === m.studentId);
             return {
@@ -121,7 +123,7 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "멤버십 결제 내역");
         XLSX.writeFile(workbook, `멤버십결제내역_${dayjs().format('YYYYMMDD')}.xlsx`);
-    };
+    }, [memberships, students]);
 
     return (
         <div className="space-y-6">

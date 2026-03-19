@@ -101,7 +101,7 @@ const App: React.FC = () => {
         }
         if (attendanceData) {
             const mapped = attendanceData.map((a: any) => ({
-                id: a.id,
+                id: a.attendance_id || a.id,
                 studentId: a.student_id || a.studentId,
                 studentName: a.name || a['이름'] || a.studentName,
                 studentPhone: a.phone || a['연락처'] || a.studentPhone,
@@ -799,23 +799,14 @@ const App: React.FC = () => {
         }
    }, [supabase]);
 
-    const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string, existingRecordId?: string) => {
+    const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string) => {
+        console.log('클릭됨', studentId, date);
         const formattedDate = dayjs(date).format('YYYY-MM-DD');
         
-        // Generate fallback class_id if missing: [Date]-[Time]-[ClassName]
-        const timeMatch = classTime.match(/^(\d{2}:\d{2})/);
-        const timePart = timeMatch ? timeMatch[1] : '';
-        const namePart = classTime.split(' - ')[1] || classTime;
-        const effectiveClassId = classId || `${formattedDate}-${timePart}-${namePart}`;
-        
-        const exists = existingRecordId ? attendance.find(a => a.id === existingRecordId) : attendance.find(a => {
+        // Find existing record using strict 1:1 comparison
+        const exists = attendance.find(a => {
             const aDate = dayjs(a.date).format('YYYY-MM-DD');
-            const aTimeMatch = (a.classTime || '').match(/^(\d{2}:\d{2})/);
-            const aTimePart = aTimeMatch ? aTimeMatch[1] : '';
-            const aNamePart = (a.classTime || '').split(' - ')[1] || a.classTime;
-            const aEffectiveClassId = a.classId || `${aDate}-${aTimePart}-${aNamePart}`;
-
-            return a.studentId === studentId && aDate === formattedDate && aEffectiveClassId === effectiveClassId;
+            return a.studentId === studentId && aDate === formattedDate && a.classId === classId;
         });
 
         if (exists) {
@@ -825,7 +816,7 @@ const App: React.FC = () => {
                     alert("출석 삭제 중 오류가 발생했습니다: " + error.message);
                     console.error(error);
                 }
-                // Always refetch to ensure sync
+                // Force state update by refetching
                 await fetchData();
             } else {
                 setAttendance(prev => prev.filter(a => a.id !== exists.id));
@@ -834,20 +825,13 @@ const App: React.FC = () => {
             const student = students.find(s => s.id === studentId);
             const newId = crypto.randomUUID();
             
-            console.log('[toggleAttendance] Saving to DB:', {
-                attendance_date: formattedDate,
-                class_id: effectiveClassId,
-                student_id: studentId,
-                student_name: student?.name
-            });
-            
             if (supabase) {
                 const { error } = await supabase.from('attendance').insert([{
                     attendance_id: newId,
                     student_id: studentId,
                     attendance_date: formattedDate,
                     class_info: classTime,
-                    class_id: effectiveClassId,
+                    class_id: classId,
                     name: student?.name || '',
                     phone: student?.phone ? String(student?.phone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
                 }]);
@@ -856,7 +840,7 @@ const App: React.FC = () => {
                     alert("출석 저장 중 오류가 발생했습니다: " + error.message);
                     console.error(error);
                 }
-                // Always refetch to ensure sync
+                // Force state update by refetching
                 await fetchData();
             } else {
                 const newRecord = { 
@@ -864,7 +848,7 @@ const App: React.FC = () => {
                     studentId, 
                     date: formattedDate, 
                     classTime, 
-                    classId: effectiveClassId,
+                    classId,
                     studentName: student?.name,
                     studentPhone: student?.phone
                 };
