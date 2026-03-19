@@ -1,14 +1,15 @@
 
 import React, { useState, useCallback } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule } from './types';
-import { PASS_PRICES, PASS_DURATIONS, DEFAULT_SCHEDULE } from './constants';
+import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule, Transaction } from './types';
+import { PASS_PRICES, PASS_DURATIONS, DEFAULT_SCHEDULE, calculateEndDate } from './constants';
 import { Dashboard } from './components/Dashboard';
 import { AttendanceManager } from './components/AttendanceManager';
 import { ExpenseManager } from './components/ExpenseManager';
 import { ActiveMemberManager } from './components/ActiveMemberManager';
 import { MembershipHistoryManager } from './components/MembershipHistoryManager';
 import { DashboardIcon, StudentsIcon, AttendanceIcon, ExpenseIcon, FinancialsIcon } from './components/icons';
+import { FinancialReport } from './components/FinancialReport';
 
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -16,6 +17,7 @@ import timezone from 'dayjs/plugin/timezone';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+dayjs.tz.setDefault('Asia/Seoul');
 
 const parseAmount = (val: any): number => {
     if (typeof val === 'number') return val;
@@ -40,32 +42,6 @@ const formatPhone = (val: any): string => {
     return str;
 };
 
-const calculateEndDate = (startDate: Date | string, passType: PassType): Date => {
-    const duration = PASS_DURATIONS[passType];
-    let end = dayjs(startDate);
-
-    if (duration.unit === 'month') {
-        const monthsToAdd = duration.value;
-        const originalDay = end.date();
-        
-        // Add months
-        end = end.add(monthsToAdd, 'month');
-        
-        // Handle month overflow (dayjs handles this by default, but let's be explicit if needed)
-        // Actually dayjs.add(1, 'month') on Jan 31 results in Feb 28/29.
-        
-        // Calculate days to subtract based on rule:
-        // 1~3 months -> -1 day
-        // 6 months -> -2 days
-        const daysToSubtract = Math.max(1, Math.floor(monthsToAdd / 3));
-        end = end.subtract(daysToSubtract, 'day');
-    } else {
-        // Day based
-        end = end.add(duration.value - 1, 'day');
-    }
-    return end.toDate();
-};
-
 const App: React.FC = () => {
     const [view, setView] = useState<ViewType>('dashboard');
     
@@ -73,6 +49,7 @@ const App: React.FC = () => {
     const [memberships, setMemberships] = useState<Membership[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [schedule, setSchedule] = useState<ClassSchedule[]>(DEFAULT_SCHEDULE);
 
     const supabase = (window as any)._supabase;
@@ -85,12 +62,14 @@ const App: React.FC = () => {
                 { data: membershipsData, error: membershipError },
                 { data: attendanceData, error: attendanceError },
                 { data: expensesData, error: expenseError },
+                { data: transactionsData, error: transactionError },
                 { data: classesData, error: classError }
             ] = await Promise.all([
                 supabase.from('student').select('*'),
                 supabase.from('membership').select('*'),
                 supabase.from('attendance').select('*'),
                 supabase.from('expense').select('*'),
+                supabase.from('transaction_history').select('*'),
                 supabase.from('classes').select('*')
             ]);
             
@@ -149,9 +128,23 @@ const App: React.FC = () => {
                     description: e.내용 || e.description,
                     amount: typeof (e.금액 || e.amount) === 'string' 
                         ? Number((e.금액 || e.amount).replace(/[^0-9.-]+/g,"")) 
-                        : Number(e.금액 || e.amount)
+                        : Number(e.금액 || e.amount),
+                    transactionId: e.transaction_id || e.transactionId
                 }));
                 setExpenses(mappedExpenses);
+            }
+            if (transactionsData) {
+                const mapped = transactionsData.map((t: any) => ({
+                    id: t.id,
+                    type: t.type,
+                    category: t.category,
+                    amount: t.amount,
+                    date: t.date,
+                    description: t.description,
+                    studentId: t.student_id,
+                    membershipId: t.membership_id
+                }));
+                setTransactions(mapped);
             }
             if (classesData) {
                 const mappedClasses = classesData.map((c: any) => ({
@@ -175,7 +168,8 @@ const App: React.FC = () => {
         paymentDateStr: string, 
         paymentMethod: '카드' | '현금', 
         cashReceiptIssued: boolean,
-        discountAmount: number = 0
+        discountAmount: number = 0,
+        endDateStr?: string
     ) => {
         const studentId = crypto.randomUUID();
         const registrationDate = dayjs().toISOString();
@@ -187,7 +181,7 @@ const App: React.FC = () => {
         };
         
         const startDate = dayjs(parseDate(startDateStr));
-        const endDate = dayjs(calculateEndDate(startDate.toDate(), passType));
+        const endDate = endDateStr ? dayjs(endDateStr) : dayjs(calculateEndDate(startDate.toDate(), passType));
 
         const newMembership: Membership = {
             id: crypto.randomUUID(),
@@ -202,8 +196,20 @@ const App: React.FC = () => {
             cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
         };
 
+        const newTransaction: Transaction = {
+            id: crypto.randomUUID(),
+            type: 'Income',
+            category: '멤버십',
+            amount: newMembership.price,
+            date: newMembership.paymentDate || registrationDate,
+            description: `신규 멤버십: ${newMembership.passType}`,
+            studentId: studentId,
+            membershipId: newMembership.id
+        };
+
         setStudents(prev => [...prev, newStudent]);
         setMemberships(prev => [...prev, newMembership]);
+        setTransactions(prev => [...prev, newTransaction]);
 
         if (supabase) {
             const { error: studentError } = await supabase.from('student').insert([{
@@ -212,7 +218,7 @@ const App: React.FC = () => {
                 phone: String(newStudent.phone).replace(/[^0-9]/g, '').padStart(11, '0'),
                 registration_date: newStudent.registrationDate,
                 identification: newStudent.id,
-                memo: newStudent.memo || newStudent.remarks || ''
+                memo: newStudent.notes || ''
             }]);
             if (studentError) {
                 alert("학생 저장 중 오류가 발생했습니다: " + studentError.message);
@@ -238,8 +244,20 @@ const App: React.FC = () => {
                 alert("멤버십 저장 중 오류가 발생했습니다: " + membershipError.message);
                 console.error(membershipError);
             }
+
+            // Insert transaction
+            await supabase.from('transaction_history').insert([{
+                id: newTransaction.id,
+                type: newTransaction.type,
+                category: newTransaction.category,
+                amount: newTransaction.amount,
+                date: newTransaction.date,
+                description: newTransaction.description,
+                student_id: newTransaction.studentId,
+                membership_id: newTransaction.membershipId
+            }]);
         }
-    }, [supabase]);
+    }, [supabase, students]);
 
     const addMembership = useCallback(async (
         studentId: string, 
@@ -249,10 +267,11 @@ const App: React.FC = () => {
         paymentMethod: '카드' | '현금', 
         cashReceiptIssued: boolean,
         customPrice?: number,
-        discountAmount: number = 0
+        discountAmount: number = 0,
+        endDateStr?: string
     ) => {
         const startDate = dayjs(parseDate(startDateStr));
-        const endDate = dayjs(calculateEndDate(startDate.toDate(), passType));
+        const endDate = endDateStr ? dayjs(endDateStr) : dayjs(calculateEndDate(startDate.toDate(), passType));
 
         let price = customPrice !== undefined ? parseAmount(customPrice) : PASS_PRICES[passType];
         
@@ -283,7 +302,19 @@ const App: React.FC = () => {
             cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
         };
 
+        const newTransaction: Transaction = {
+            id: crypto.randomUUID(),
+            type: 'Income',
+            category: '멤버십',
+            amount: newMembership.price,
+            date: newMembership.paymentDate || newMembership.startDate,
+            description: `재등록 멤버십: ${newMembership.passType}`,
+            studentId: studentId,
+            membershipId: newMembership.id
+        };
+
         setMemberships(prev => [...prev, newMembership]);
+        setTransactions(prev => [...prev, newTransaction]);
 
         if (supabase) {
             const student = students.find(s => s.id === newMembership.studentId);
@@ -306,57 +337,85 @@ const App: React.FC = () => {
                 alert("멤버십 저장 중 오류가 발생했습니다: " + error.message);
                 console.error(error);
             }
+
+            // Insert transaction
+            await supabase.from('transaction_history').insert([{
+                id: newTransaction.id,
+                type: newTransaction.type,
+                category: newTransaction.category,
+                amount: newTransaction.amount,
+                date: newTransaction.date,
+                description: newTransaction.description,
+                student_id: newTransaction.studentId,
+                membership_id: newTransaction.membershipId
+            }]);
         }
-    }, [memberships, supabase]);
+    }, [memberships, supabase, students]);
 
     const upgradeMembership = useCallback(async (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => {
         const original = memberships.find(m => m.id === originalMembershipId);
         if (!original) return;
 
+        const today = dayjs().tz('Asia/Seoul');
+        const startDate = dayjs(original.startDate).tz('Asia/Seoul');
+        const endDate = dayjs(original.endDate).tz('Asia/Seoul');
+
+        const totalDays = endDate.diff(startDate, 'day');
+        const remainingDays = Math.max(0, endDate.diff(today, 'day'));
+        
+        const remainingValue = totalDays > 0 ? Math.floor((original.price / totalDays) * remainingDays) : 0;
         const newFullPrice = PASS_PRICES[newPassType];
-        const upgradeCost = newFullPrice - original.price;
+        const upgradeCost = newFullPrice - remainingValue;
 
         if (upgradeCost < 0) {
-            alert("변경하려는 이용권의 가격이 현재 이용권보다 저렴합니다. 업그레이드는 더 높은 가격의 이용권으로만 가능합니다.");
+            alert("변경하려는 이용권의 가격이 현재 이용권의 남은 가치보다 저렴합니다. 업그레이드는 더 높은 가격의 이용권으로만 가능합니다.");
             return;
         }
 
-        const today = new Date();
         const paymentDateStr = today.toISOString();
-
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
         
         const updatedOriginal = {
             ...original,
-            endDate: yesterday.toISOString(),
+            status: 'Upgraded' as const,
         };
 
-        const originalStartDate = new Date(original.startDate);
-        const newEndDate = calculateEndDate(originalStartDate, newPassType);
+        const newEndDate = calculateEndDate(today.toDate(), newPassType);
 
         const newMembership: Membership = {
             id: crypto.randomUUID(),
             studentId: original.studentId,
             passType: newPassType,
-            startDate: original.startDate,
-            endDate: newEndDate.toISOString(),
+            startDate: today.format('YYYY-MM-DD'),
+            endDate: dayjs(newEndDate).format('YYYY-MM-DD'),
             price: upgradeCost,
             paymentDate: paymentDateStr,
             paymentMethod,
             cashReceiptIssued: paymentMethod === '현금' ? cashReceiptIssued : false,
+            status: 'Active' as const
+        };
+
+        const newTransaction: Transaction = {
+            id: crypto.randomUUID(),
+            type: 'Income',
+            category: '멤버십 업그레이드',
+            amount: upgradeCost,
+            date: paymentDateStr,
+            description: `${original.passType} -> ${newPassType} 업그레이드`,
+            studentId: original.studentId,
+            membershipId: newMembership.id
         };
 
         setMemberships(prev => prev.map(m => m.id === originalMembershipId ? updatedOriginal : m).concat(newMembership));
-        alert("이용권이 성공적으로 업그레이드 되었습니다.");
+        setTransactions(prev => [...prev, newTransaction]);
+        alert(`이용권이 성공적으로 업그레이드 되었습니다. 결제 금액: ${upgradeCost.toLocaleString()}원`);
 
         if (supabase) {
-            const { error: updateError } = await supabase.from('membership').update({ end_date: updatedOriginal.endDate }).eq('id', originalMembershipId);
-            if (updateError) {
-                console.error(updateError);
-            }
+            // Update old membership status
+            await supabase.from('membership').update({ status: 'Upgraded' }).eq('id', originalMembershipId);
+            
+            // Insert new membership
             const student = students.find(s => s.id === newMembership.studentId);
-            const { error: insertError } = await supabase.from('membership').insert([{
+            await supabase.from('membership').insert([{
                 id: newMembership.id,
                 identification: student?.id || newMembership.studentId,
                 student_id: newMembership.studentId,
@@ -366,17 +425,25 @@ const App: React.FC = () => {
                 name: student?.name || '',
                 phone: student ? String(student.phone).replace(/[^0-9]/g, '').padStart(11, '0') : '',
                 price: newMembership.price,
+                payment_date: newMembership.paymentDate,
                 payment_method: newMembership.paymentMethod,
                 cash_receipt_issued: newMembership.cashReceiptIssued,
-                payment_date: newMembership.paymentDate,
-                refund_amount: newMembership.refundAmount || null
+                status: 'Active'
             }]);
-            if (insertError) {
-                alert("이용권 업그레이드 저장 중 오류가 발생했습니다: " + insertError.message);
-                console.error(insertError);
-            }
+
+            // Insert transaction
+            await supabase.from('transaction_history').insert([{
+                id: newTransaction.id,
+                type: newTransaction.type,
+                category: newTransaction.category,
+                amount: newTransaction.amount,
+                date: newTransaction.date,
+                description: newTransaction.description,
+                student_id: newTransaction.studentId,
+                membership_id: newTransaction.membershipId
+            }]);
         }
-    }, [memberships, supabase]);
+    }, [memberships, students, supabase]);
 
     const deleteStudent = useCallback(async (studentIdToDelete: string) => {
         setStudents(prevStudents => prevStudents.filter(student => student.id !== studentIdToDelete));
@@ -453,6 +520,10 @@ const App: React.FC = () => {
                 if (updatedStudentData.phone) {
                     mappedStudentData.phone = String(updatedStudentData.phone).replace(/[^0-9]/g, '').padStart(11, '0');
                 }
+                if (updatedStudentData.notes) {
+                    mappedStudentData.memo = updatedStudentData.notes;
+                    delete mappedStudentData.notes;
+                }
                 const { error } = await supabase.from('student').update(mappedStudentData).eq('student_id', studentId);
                 if (error) {
                     alert("학생 정보 수정 중 오류가 발생했습니다: " + error.message);
@@ -509,8 +580,8 @@ const App: React.FC = () => {
             prevStudents.map(s => {
                 if (studentIdsToUpdate.has(s.id)) {
                     const extensionRemark = `[${new Date().toLocaleDateString('ko-KR')}] "${reason}" 사유로 ${days}일 연장.`;
-                    const newRemarks = s.remarks ? `${s.remarks}\n${extensionRemark}` : extensionRemark;
-                    const updatedStudent = { ...s, remarks: newRemarks };
+                    const newNotes = s.notes ? `${s.notes}\n${extensionRemark}` : extensionRemark;
+                    const updatedStudent = { ...s, notes: newNotes };
                     updatedStudents.push(updatedStudent);
                     return updatedStudent;
                 }
@@ -531,7 +602,7 @@ const App: React.FC = () => {
 
         if (supabase) {
             for (const s of updatedStudents) {
-                const { error } = await supabase.from('student').update({ memo: s.remarks }).eq('student_id', s.id);
+                const { error } = await supabase.from('student').update({ memo: s.notes }).eq('student_id', s.id);
                 if (error) console.error(error);
             }
             for (const m of updatedMemberships) {
@@ -559,7 +630,7 @@ const App: React.FC = () => {
                         name: item.student_name,
                         phone: item.student_phone,
                         registrationDate: item.student_registrationDate || new Date().toISOString(),
-                        remarks: item.student_remarks
+                        notes: item.student_notes || item.student_remarks
                     };
                     updatedStudents.push(newStudent);
                     newStudents.push(newStudent);
@@ -605,7 +676,7 @@ const App: React.FC = () => {
                     phone: String(s.phone).replace(/[^0-9]/g, '').padStart(11, '0'),
                     registration_date: s.registrationDate,
                     identification: s.id,
-                    memo: s.memo || s.remarks || ''
+                    memo: s.notes || ''
                 }));
                 const { error } = await supabase.from('student').insert(mappedStudents);
                 if (error) {
@@ -823,9 +894,9 @@ const App: React.FC = () => {
             if (updates.phone) {
                 mappedUpdates.phone = String(updates.phone).replace(/[^0-9]/g, '').padStart(11, '0');
             }
-            if (updates.remarks) {
-                mappedUpdates.memo = updates.remarks;
-                delete mappedUpdates.remarks;
+            if (updates.notes) {
+                mappedUpdates.memo = updates.notes;
+                delete mappedUpdates.notes;
             }
             const { error } = await supabase.from('student').update(mappedUpdates).eq('student_id', studentId);
             if (error) {
@@ -836,55 +907,128 @@ const App: React.FC = () => {
     }, [supabase]);
 
     const addExpense = useCallback(async (expense: Omit<Expense, 'id'>) => {
-        const newExpense = { ...expense, id: crypto.randomUUID() };
+        const newExpenseId = crypto.randomUUID();
+        const newTransactionId = crypto.randomUUID();
+        const newExpense = { ...expense, id: newExpenseId, transactionId: newTransactionId };
+        
+        const newTransaction: Transaction = {
+            id: newTransactionId,
+            type: 'Expense',
+            category: newExpense.category,
+            amount: newExpense.amount,
+            date: dayjs(newExpense.date).tz('Asia/Seoul').toISOString(),
+            description: newExpense.description,
+        };
+
         setExpenses(prev => [...prev, newExpense]);
+        setTransactions(prev => [...prev, newTransaction]);
+
         if (supabase) {
             const { error } = await supabase.from('expense').insert([{
+                id: newExpense.id,
                 날짜: newExpense.date,
                 분류: newExpense.category,
                 내용: newExpense.description,
-                금액: newExpense.amount
+                금액: newExpense.amount,
+                transaction_id: newExpense.transactionId
             }]);
             if (error) {
                 alert("지출 저장 중 오류가 발생했습니다: " + error.message);
                 console.error(error);
             }
+
+            // Insert transaction
+            await supabase.from('transaction_history').insert([{
+                id: newTransaction.id,
+                type: newTransaction.type,
+                category: newTransaction.category,
+                amount: newTransaction.amount,
+                date: newTransaction.date,
+                description: newTransaction.description
+            }]);
         }
     }, [supabase]);
 
     const deleteExpense = useCallback(async (expenseId: string) => {
         const expenseToDelete = expenses.find(e => e.id === expenseId);
         setExpenses(prev => prev.filter(e => e.id !== expenseId));
+        
+        if (expenseToDelete) {
+            // Remove transaction from local state
+            setTransactions(prev => prev.filter(t => t.id !== expenseToDelete.transactionId));
+        }
+
         if (supabase && expenseToDelete) {
-            const { error } = await supabase.from('expense').delete()
-                .eq('날짜', expenseToDelete.date)
-                .eq('분류', expenseToDelete.category)
-                .eq('내용', expenseToDelete.description)
-                .eq('금액', expenseToDelete.amount);
-            if (error) {
-                alert("지출 삭제 중 오류가 발생했습니다: " + error.message);
-                console.error(error);
+            // Delete from expense table
+            const { error: expenseError } = await supabase.from('expense').delete().eq('id', expenseId);
+            if (expenseError) {
+                // Fallback for older entries without ID
+                await supabase.from('expense').delete()
+                    .eq('날짜', expenseToDelete.date)
+                    .eq('분류', expenseToDelete.category)
+                    .eq('내용', expenseToDelete.description)
+                    .eq('금액', expenseToDelete.amount);
+            }
+
+            // Delete from transaction_history
+            if (expenseToDelete.transactionId) {
+                await supabase.from('transaction_history').delete().eq('id', expenseToDelete.transactionId);
+            } else {
+                // Fallback for older entries without transactionId
+                await supabase.from('transaction_history').delete()
+                    .eq('type', 'Expense')
+                    .eq('category', expenseToDelete.category)
+                    .eq('amount', expenseToDelete.amount)
+                    .eq('description', expenseToDelete.description);
             }
         }
     }, [expenses, supabase]);
 
     const refundMembership = useCallback(async (membershipId: string, refundAmount: number, refundReason: string) => {
         const amount = parseAmount(refundAmount);
+        const today = dayjs().tz('Asia/Seoul').toISOString();
+        
         setMemberships(prev => prev.map(m => m.id === membershipId ? { ...m, refundAmount: amount, refundReason } : m));
-        if (supabase) {
-            const membership = memberships.find(m => m.id === membershipId);
-            const { error } = await supabase.from('membership').update({ refund_amount: amount }).eq('id', membershipId);
-            if (error) {
-                alert("환불 처리 중 오류가 발생했습니다: " + error.message);
-                console.error(error);
-                return;
-            }
-            if (membership) {
+        
+        const membership = memberships.find(m => m.id === membershipId);
+        if (membership) {
+            const newTransaction: Transaction = {
+                id: crypto.randomUUID(),
+                type: 'Expense',
+                category: '환불',
+                amount: amount,
+                date: today,
+                description: `환불: ${membership.passType} (${refundReason})`,
+                studentId: membership.studentId,
+                membershipId: membershipId
+            };
+            setTransactions(prev => [...prev, newTransaction]);
+
+            if (supabase) {
+                const { error } = await supabase.from('membership').update({ refund_amount: amount }).eq('id', membershipId);
+                if (error) {
+                    alert("환불 처리 중 오류가 발생했습니다: " + error.message);
+                    console.error(error);
+                    return;
+                }
+                
+                // Insert transaction
+                await supabase.from('transaction_history').insert([{
+                    id: newTransaction.id,
+                    type: newTransaction.type,
+                    category: newTransaction.category,
+                    amount: newTransaction.amount,
+                    date: newTransaction.date,
+                    description: newTransaction.description,
+                    student_id: newTransaction.studentId,
+                    membership_id: newTransaction.membershipId
+                }]);
+
                 const { error: refundError } = await supabase.from('refund_amount').insert([{
                     student_id: membership.studentId,
                     membership_id: membershipId,
                     refund_amount: amount,
-                    refund_date: new Date().toISOString(),
+                    refund_date: today,
                     refund_reason: refundReason
                 }]);
                 if (refundError) {
@@ -907,6 +1051,7 @@ const App: React.FC = () => {
                     attendance={attendance} 
                     updateStudent={updateStudent}
                     updateStudentAndMembership={updateStudentAndMembership}
+                    upgradeMembership={upgradeMembership}
                 />;
             case 'memberships':
                 return <MembershipHistoryManager 
@@ -925,9 +1070,12 @@ const App: React.FC = () => {
                     toggleAttendance={toggleAttendance}
                     addOrUpdateSchedule={addOrUpdateSchedule}
                     deleteSchedule={deleteSchedule}
+                    updateStudent={updateStudent}
                 />;
             case 'expenses':
                 return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} importExpenses={importExpenses} />;
+            case 'financial_report':
+                return <FinancialReport transactions={transactions} students={students} />;
             default:
                 return <div>Unknown View</div>;
         }
@@ -980,6 +1128,13 @@ const App: React.FC = () => {
                     >
                         <ExpenseIcon className="w-5 h-5" />
                         <span className="font-medium">지출 관리</span>
+                    </button>
+                    <button
+                        onClick={() => setView('financial_report')}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${view === 'financial_report' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
+                    >
+                        <DashboardIcon className="w-5 h-5" />
+                        <span className="font-medium">재무 리포트</span>
                     </button>
                 </nav>
                 <div className="p-6 border-t border-gray-100 text-[10px] text-center text-gray-400 font-medium">

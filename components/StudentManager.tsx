@@ -2,14 +2,14 @@
 import React, { useState, useMemo } from 'react';
 import dayjs from 'dayjs';
 import { Student, Membership, PassType } from '../types';
-import { PASS_OPTIONS, PASS_PRICES } from '../constants';
+import { PASS_OPTIONS, PASS_PRICES, calculateEndDate } from '../constants';
 import { CloseIcon, UploadIcon, DownloadIcon } from './icons';
 
 interface StudentManagerProps {
     students: Student[];
     memberships: Membership[];
-    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
-    addMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, customPrice?: number) => void;
+    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, discountAmount?: number, endDate?: string) => void;
+    addMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, customPrice?: number, discountAmount?: number, endDate?: string) => void;
     deleteStudent: (studentId: string) => void;
     updateStudentAndMembership: (
         studentId: string,
@@ -31,24 +31,31 @@ const formatDate = (dateStr: string | undefined) => {
 const AddStudentModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
-    addStudent: (student: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    addStudent: StudentManagerProps['addStudent'];
 }> = ({ isOpen, onClose, addStudent }) => {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
-    const [remarks, setRemarks] = useState('');
+    const [notes, setNotes] = useState('');
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(dayjs().format('YYYY-MM-DD'));
+    const [endDate, setEndDate] = useState(dayjs(calculateEndDate(new Date(), PassType.MONTHLY_3_PER_WEEK)).format('YYYY-MM-DD'));
     const [paymentDate, setPaymentDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
 
+    // Auto-calculate end date when startDate or passType changes
+    React.useEffect(() => {
+        const calculated = calculateEndDate(startDate, passType);
+        setEndDate(dayjs(calculated).format('YYYY-MM-DD'));
+    }, [startDate, passType]);
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (name && phone && passType && startDate && paymentDate) {
-            addStudent({ name, phone, remarks }, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued);
+            addStudent({ name, phone, notes }, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued, 0, endDate);
             setName('');
             setPhone('');
-            setRemarks('');
+            setNotes('');
             setPassType(PassType.MONTHLY_3_PER_WEEK);
             setStartDate(dayjs().format('YYYY-MM-DD'));
             setPaymentDate(dayjs().format('YYYY-MM-DD'));
@@ -79,8 +86,8 @@ const AddStudentModal: React.FC<{
                         <input type="tel" id="phone" value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="010-1234-5678" required />
                     </div>
                     <div>
-                        <label htmlFor="remarks" className="block text-sm font-medium text-gray-700">비고</label>
-                        <textarea id="remarks" value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                        <label htmlFor="notes" className="block text-sm font-medium text-gray-700">비고</label>
+                        <textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></textarea>
                     </div>
                     <div>
                         <label htmlFor="passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
@@ -92,13 +99,17 @@ const AddStudentModal: React.FC<{
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label htmlFor="paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
-                            <input type="date" id="paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
-                        </div>
-                        <div>
                             <label htmlFor="startDate" className="block text-sm font-medium text-gray-700">이용권 시작일</label>
                             <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
                         </div>
+                        <div>
+                            <label htmlFor="endDate" className="block text-sm font-medium text-gray-700">이용권 만료일 (수동 수정 가능)</label>
+                            <input type="date" id="endDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
+                        </div>
+                    </div>
+                    <div>
+                        <label htmlFor="paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
+                        <input type="date" id="paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
                     </div>
                      <div>
                         <label className="block text-sm font-medium text-gray-700">결제 방식</label>
@@ -134,7 +145,7 @@ const AddStudentModal: React.FC<{
 const ReregisterForm: React.FC<{
     student: Student;
     latestMembership?: Membership;
-    onAddMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    onAddMembership: StudentManagerProps['addMembership'];
     onCancel: () => void;
 }> = ({ student, latestMembership, onAddMembership, onCancel }) => {
 
@@ -150,13 +161,20 @@ const ReregisterForm: React.FC<{
 
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(getDefaultStartDate());
+    const [endDate, setEndDate] = useState(dayjs(calculateEndDate(getDefaultStartDate(), PassType.MONTHLY_3_PER_WEEK)).format('YYYY-MM-DD'));
     const [paymentDate, setPaymentDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
 
+    // Auto-calculate end date when startDate or passType changes
+    React.useEffect(() => {
+        const calculated = calculateEndDate(startDate, passType);
+        setEndDate(dayjs(calculated).format('YYYY-MM-DD'));
+    }, [startDate, passType]);
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onAddMembership(student.id, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued);
+        onAddMembership(student.id, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued, undefined, 0, endDate);
     };
 
     // 직전 이용권이 원데이 또는 1주일권인지 확인
@@ -190,13 +208,17 @@ const ReregisterForm: React.FC<{
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label htmlFor="rereg-paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
-                    <input type="date" id="rereg-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
-                </div>
-                <div>
                     <label htmlFor="rereg-startDate" className="block text-sm font-medium text-gray-700">이용권 시작일</label>
                     <input type="date" id="rereg-startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
                 </div>
+                <div>
+                    <label htmlFor="rereg-endDate" className="block text-sm font-medium text-gray-700">이용권 만료일 (수동 수정 가능)</label>
+                    <input type="date" id="rereg-endDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                </div>
+            </div>
+            <div>
+                <label htmlFor="rereg-paymentDate" className="block text-sm font-medium text-gray-700">결제일</label>
+                <input type="date" id="rereg-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
             </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700">결제 방식</label>
@@ -218,15 +240,22 @@ const ReregisterForm: React.FC<{
 
 const PastMembershipForm: React.FC<{
     student: Student;
-    onAddMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, customPrice: number) => void;
+    onAddMembership: StudentManagerProps['addMembership'];
     onCancel: () => void;
 }> = ({ student, onAddMembership, onCancel }) => {
     const [passType, setPassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(dayjs().format('YYYY-MM-DD'));
+    const [endDate, setEndDate] = useState(dayjs(calculateEndDate(new Date(), PassType.MONTHLY_3_PER_WEEK)).format('YYYY-MM-DD'));
     const [paymentDate, setPaymentDate] = useState(dayjs().format('YYYY-MM-DD'));
     const [paymentMethod, setPaymentMethod] = useState<'카드' | '현금'>('카드');
     const [cashReceiptIssued, setCashReceiptIssued] = useState(false);
     const [customPrice, setCustomPrice] = useState<string>(String(PASS_PRICES[PassType.MONTHLY_3_PER_WEEK]));
+
+    // Auto-calculate end date when startDate or passType changes
+    React.useEffect(() => {
+        const calculated = calculateEndDate(startDate, passType);
+        setEndDate(dayjs(calculated).format('YYYY-MM-DD'));
+    }, [startDate, passType]);
 
     const handlePassChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newType = e.target.value as PassType;
@@ -236,7 +265,7 @@ const PastMembershipForm: React.FC<{
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onAddMembership(student.id, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued, Number(customPrice));
+        onAddMembership(student.id, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued, Number(customPrice), 0, endDate);
     };
 
     return (
@@ -260,13 +289,17 @@ const PastMembershipForm: React.FC<{
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label htmlFor="past-paymentDate" className="block text-sm font-medium text-gray-700">결제일 (과거)</label>
-                    <input type="date" id="past-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
-                </div>
-                <div>
                     <label htmlFor="past-startDate" className="block text-sm font-medium text-gray-700">시작일 (과거)</label>
                     <input type="date" id="past-startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
                 </div>
+                <div>
+                    <label htmlFor="past-endDate" className="block text-sm font-medium text-gray-700">만료일 (수동 수정 가능)</label>
+                    <input type="date" id="past-endDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
+                </div>
+            </div>
+            <div>
+                <label htmlFor="past-paymentDate" className="block text-sm font-medium text-gray-700">결제일 (과거)</label>
+                <input type="date" id="past-paymentDate" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3" required />
             </div>
              <div>
                 <label className="block text-sm font-medium text-gray-700">결제 방식</label>
@@ -397,7 +430,7 @@ const StudentDetailModal: React.FC<{
 }> = ({ student, membership, allMemberships, onClose, onSave, onAddMembership, upgradeMembership }) => {
     const [name, setName] = useState(student.name);
     const [phone, setPhone] = useState(student.phone);
-    const [remarks, setRemarks] = useState(student.remarks || '');
+    const [notes, setNotes] = useState(student.notes || '');
     const [passType, setPassType] = useState(membership?.passType || PassType.MONTHLY_3_PER_WEEK);
     const [startDate, setStartDate] = useState(membership?.startDate?.split('T')[0] || '');
     const [endDate, setEndDate] = useState(membership?.endDate?.split('T')[0] || '');
@@ -417,7 +450,7 @@ const StudentDetailModal: React.FC<{
         const studentData: Partial<Omit<Student, 'id'>> = {};
         if (name !== student.name) studentData.name = name;
         if (phone !== student.phone) studentData.phone = phone;
-        if (remarks !== (student.remarks || '')) studentData.remarks = remarks;
+        if (notes !== (student.notes || '')) studentData.notes = notes;
 
         const membershipData: Partial<Omit<Membership, 'id' | 'studentId'>> = {};
         if (membership) {
@@ -587,8 +620,8 @@ const StudentDetailModal: React.FC<{
                                 </div>
                             </div>
                             <div className="mt-4">
-                                <label htmlFor="edit-remarks" className="block text-sm font-medium text-gray-700">비고</label>
-                                <textarea id="edit-remarks" value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"></textarea>
+                                <label htmlFor="edit-notes" className="block text-sm font-medium text-gray-700">비고</label>
+                                <textarea id="edit-notes" value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"></textarea>
                             </div>
                         </div>
                         
@@ -867,7 +900,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
             student_name: '이름',
             student_phone: '연락처',
             student_registrationDate: '최초 등록일',
-            student_remarks: '비고',
+            student_notes: '비고',
             membership_id: '멤버십 ID',
             membership_passType: '이용권 종류',
             membership_startDate: '이용권 시작일',
@@ -890,7 +923,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                     student_name: student.name,
                     student_phone: student.phone,
                     student_registrationDate: student.registrationDate,
-                    student_remarks: student.remarks || '',
+                    student_notes: student.notes || '',
                  }
             }
             return studentMemberships.map(membership => ({
@@ -898,7 +931,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                 student_name: student.name,
                 student_phone: student.phone,
                 student_registrationDate: student.registrationDate,
-                student_remarks: student.remarks || '',
+                student_notes: student.notes || '',
                 membership_id: membership?.id || '',
                 membership_passType: membership?.passType || '',
                 membership_startDate: membership?.startDate || '',
@@ -962,7 +995,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                     '이름': 'student_name',
                     '연락처': 'student_phone',
                     '최초 등록일': 'student_registrationDate',
-                    '비고': 'student_remarks',
+                    '비고': 'student_notes',
                     '멤버십 ID': 'membership_id',
                     '이용권 종류': 'membership_passType',
                     '이용권 시작일': 'membership_startDate',
@@ -1128,7 +1161,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({ students, member
                                             {s.name}
                                         </button>
                                     </td>
-                                    <td className="px-6 py-4 text-gray-600 truncate" title={s.remarks || '-'}>{s.remarks || '-'}</td>
+                                    <td className="px-6 py-4 text-gray-600 truncate" title={s.notes || '-'}>{s.notes || '-'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap truncate" title={s.membership?.passType || 'N/A'}>{s.membership?.passType || 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.membership ? `${formatDate(s.membership.startDate)} ~ ${formatDate(s.combinedEndDate || s.membership.endDate)}` : 'N/A'}</td>
                                     <td className="px-6 py-4">

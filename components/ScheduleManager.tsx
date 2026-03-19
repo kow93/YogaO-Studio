@@ -1,9 +1,15 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import { Student, AttendanceRecord, Membership, ClassSchedule } from '../types';
 import { CLASS_COLORS } from '../constants';
 import { CloseIcon, DownloadIcon, UploadIcon, PlusIcon, SearchIcon } from './icons';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault('Asia/Seoul');
 
 interface ScheduleManagerProps {
     students: Student[];

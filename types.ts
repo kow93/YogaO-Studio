@@ -18,7 +18,7 @@ export interface Student {
   name: string;
   phone: string;
   registrationDate: string; // ISO string
-  remarks?: string;
+  notes?: string;
   memo?: string;
 }
 
@@ -37,6 +37,7 @@ export interface Membership {
   holdEndDate?: string;
   paymentMethod: '카드' | '현금';
   cashReceiptIssued?: boolean;
+  status?: 'Active' | 'Expired' | 'Upgraded' | 'Refunded';
   student?: {
     name: string;
     phone: string;
@@ -68,6 +69,20 @@ export interface Expense {
     category: ExpenseCategory;
     description: string;
     amount: number;
+    transactionId?: string;
+}
+
+export type TransactionType = 'Income' | 'Expense';
+
+export interface Transaction {
+    id: string;
+    type: TransactionType;
+    category: string;
+    amount: number;
+    date: string; // ISO string
+    description: string;
+    studentId?: string;
+    membershipId?: string;
 }
 
 export interface ClassSchedule {
@@ -80,4 +95,4 @@ export interface ClassSchedule {
 }
 
 
-export type ViewType = 'dashboard' | 'active_members' | 'memberships' | 'schedule' | 'expenses';
+export type ViewType = 'dashboard' | 'active_members' | 'memberships' | 'schedule' | 'expenses' | 'financial_report';

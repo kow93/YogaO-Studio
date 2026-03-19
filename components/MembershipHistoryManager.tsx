@@ -1,9 +1,16 @@
 
 import React, { useState, useMemo } from 'react';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import { Student, Membership, PassType } from '../types';
 import { PASS_PRICES } from '../constants';
-import { SearchIcon, PlusIcon, FinancialsIcon } from './icons';
+import { SearchIcon, PlusIcon, FinancialsIcon, DownloadIcon } from './icons';
+import * as XLSX from 'xlsx';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault('Asia/Seoul');
 
 interface MembershipHistoryManagerProps {
     students: Student[];
@@ -90,6 +97,32 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
         setExpandedStudentId(prev => prev === studentId ? null : studentId);
     };
 
+    const exportToExcel = () => {
+        const data = memberships.map(m => {
+            const student = students.find(s => s.id === m.studentId);
+            return {
+                '회원명': student?.name || '이름 없음',
+                '연락처': student?.phone || '-',
+                '이용권': m.passType,
+                '시작일': formatDate(m.startDate),
+                '만료일': formatDate(m.endDate),
+                '결제일': formatDate(m.paymentDate || m.startDate),
+                '결제금액': m.price,
+                '할인금액': m.discountAmount || 0,
+                '실결제금액': m.price - (m.discountAmount || 0),
+                '결제수단': m.paymentMethod,
+                '현금영수증': m.cashReceiptIssued ? 'Y' : 'N',
+                '환불금액': m.refundAmount || 0,
+                '상태': m.refundAmount ? '환불' : '결제완료'
+            };
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "멤버십 결제 내역");
+        XLSX.writeFile(workbook, `멤버십결제내역_${dayjs().format('YYYYMMDD')}.xlsx`);
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-end">
@@ -98,6 +131,13 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
                     <p className="text-gray-500 mt-1">모든 회원의 전체 결제 내역 및 신규 이용권 등록</p>
                 </div>
                 <div className="flex gap-4">
+                    <button 
+                        onClick={exportToExcel}
+                        className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm text-sm font-medium"
+                    >
+                        <DownloadIcon className="w-4 h-4" />
+                        <span>Excel 내보내기</span>
+                    </button>
                     <div className="relative">
                         <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input

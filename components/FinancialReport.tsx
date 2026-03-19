@@ -1,241 +1,475 @@
-import React, { useState, useMemo } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { Membership, Expense, Student, PassType, ExpenseCategory } from '../types';
+import React, { useMemo, useState } from 'react';
+import { Transaction, Student } from '../types';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+import { TrendingUp, TrendingDown, Wallet, Calendar, ChevronLeft, ChevronRight, PieChart as PieChartIcon, Printer, Download, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 interface FinancialReportProps {
-    memberships: Membership[];
-    expenses: Expense[];
+    transactions: Transaction[];
     students: Student[];
 }
 
-const formatDate = (date: Date) => date?.toISOString()?.split('T')[0] || '';
-const formatCurrency = (amount: number) => new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount);
+const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, students }) => {
+    const now = dayjs().tz('Asia/Seoul');
+    const [selectedYear, setSelectedYear] = useState(now.year());
+    const [selectedMonth, setSelectedMonth] = useState(now.month() + 1); // 1-12
 
-const RADIAN = Math.PI / 180;
-const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
-    if (percent === 0) return null;
-
-    return (
-        <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-xs font-semibold">
-            {`${(percent * 100).toFixed(0)}%`}
-        </text>
-    );
-};
-
-
-export const FinancialReport: React.FC<FinancialReportProps> = ({ memberships, expenses, students }) => {
-    const today = new Date();
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-    const [startDate, setStartDate] = useState(formatDate(firstDayOfMonth));
-    const [endDate, setEndDate] = useState(formatDate(lastDayOfMonth));
-
-    const {
-        totalRevenue,
-        totalExpense,
-        netProfit,
-        revenueByPassType,
-        expenseByCategory,
-        combinedTransactions,
-        newMembersCount,
-        reregisteredMembersCount,
-    } = useMemo(() => {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-
-        const membershipsInPeriod = memberships.filter(m => {
-            const paymentDate = new Date(m.paymentDate || m.startDate);
-            return paymentDate >= start && paymentDate <= end;
+    const filteredTransactions = useMemo(() => {
+        return transactions.filter(t => {
+            const tDate = dayjs(t.date).tz('Asia/Seoul');
+            return tDate.year() === selectedYear && (tDate.month() + 1) === selectedMonth;
         });
+    }, [transactions, selectedYear, selectedMonth]);
 
-        const expensesInPeriod = expenses.filter(e => {
-            const eDate = new Date(e.date);
-            return eDate >= start && eDate <= end;
+    const prevMonthTransactions = useMemo(() => {
+        const prevMonth = selectedMonth === 1 ? 12 : selectedMonth - 1;
+        const prevYear = selectedMonth === 1 ? selectedYear - 1 : selectedYear;
+        return transactions.filter(t => {
+            const tDate = dayjs(t.date).tz('Asia/Seoul');
+            return tDate.year() === prevYear && (tDate.month() + 1) === prevMonth;
         });
-        
-        const tr = membershipsInPeriod.reduce((acc, m) => acc + m.price, 0);
-        const te = expensesInPeriod.reduce((acc, e) => acc + e.amount, 0);
-        
-        const revByPass: { [key: string]: number } = {};
-        membershipsInPeriod.forEach(m => {
-            revByPass[m.passType] = (revByPass[m.passType] || 0) + m.price;
-        });
-        const revByPassData = Object.entries(revByPass).map(([name, value]) => ({ name, value: value || 0}));
-        
-        const expByCat: { [key: string]: number } = {};
-        expensesInPeriod.forEach(e => {
-            expByCat[e.category] = (expByCat[e.category] || 0) + e.amount;
-        });
-        const expByCatData = Object.entries(expByCat).map(([name, value]) => ({ name, value: value || 0}));
+    }, [transactions, selectedYear, selectedMonth]);
 
-        const incomeTransactions = membershipsInPeriod.map(m => ({
-            date: m.paymentDate || m.startDate,
-            type: '매출',
-            description: `${students.find(s => s.id === m.studentId)?.name || '알수없음'} - ${m.passType}`,
-            amount: m.price
-        }));
-        const expenseTransactions = expensesInPeriod.map(e => ({
-            date: e.date,
-            type: '지출',
-            description: `${e.category} - ${e.description}`,
-            amount: -e.amount
-        }));
+    const stats = useMemo(() => {
+        const income = filteredTransactions
+            .filter(t => t.type === 'Income')
+            .reduce((sum, t) => sum + t.amount, 0);
+            
+        const expense = filteredTransactions
+            .filter(t => t.type === 'Expense')
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const prevIncome = prevMonthTransactions
+            .filter(t => t.type === 'Income')
+            .reduce((sum, t) => sum + t.amount, 0);
         
-        const combined = [...incomeTransactions, ...expenseTransactions].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const prevExpense = prevMonthTransactions
+            .filter(t => t.type === 'Expense')
+            .reduce((sum, t) => sum + t.amount, 0);
 
-        const studentIdsWhoPaidInPeriod = [...new Set(membershipsInPeriod.map(m => m.studentId))];
-
-        const newMembers = studentIdsWhoPaidInPeriod.filter(studentId => {
-            const student = students.find(s => s.id === studentId);
-            if (student) {
-                const regDate = new Date(student.registrationDate);
-                return regDate >= start && regDate <= end;
-            }
-            return false;
-        }).length;
-
-        const reregisteredMembers = studentIdsWhoPaidInPeriod.filter(studentId => {
-            const student = students.find(s => s.id === studentId);
-            if (student) {
-                const regDate = new Date(student.registrationDate);
-                return regDate < start;
-            }
-            return false;
-        }).length;
+        const incomeDiff = prevIncome === 0 ? 0 : ((income - prevIncome) / prevIncome) * 100;
+        const expenseDiff = prevExpense === 0 ? 0 : ((expense - prevExpense) / prevExpense) * 100;
 
         return {
-            totalRevenue: tr,
-            totalExpense: te,
-            netProfit: tr - te,
-            revenueByPassType: revByPassData,
-            expenseByCategory: expByCatData,
-            combinedTransactions: combined,
-            newMembersCount: newMembers,
-            reregisteredMembersCount: reregisteredMembers
+            income,
+            expense,
+            profit: income - expense,
+            incomeDiff,
+            expenseDiff
         };
-    }, [startDate, endDate, memberships, expenses, students]);
+    }, [filteredTransactions, prevMonthTransactions]);
+
+    const categoryBreakdown = useMemo(() => {
+        const breakdown: Record<string, { income: number; expense: number }> = {};
+        
+        filteredTransactions.forEach(t => {
+            if (!breakdown[t.category]) {
+                breakdown[t.category] = { income: 0, expense: 0 };
+            }
+            if (t.type === 'Income') {
+                breakdown[t.category].income += t.amount;
+            } else {
+                breakdown[t.category].expense += t.amount;
+            }
+        });
+
+        return Object.entries(breakdown)
+            .map(([name, values]) => ({
+                name,
+                ...values,
+                total: values.income + values.expense
+            }))
+            .sort((a, b) => b.total - a.total);
+    }, [filteredTransactions]);
+
+    const chartData = useMemo(() => {
+        return categoryBreakdown.map(cat => ({
+            name: cat.name,
+            value: cat.total
+        }));
+    }, [categoryBreakdown]);
+
+    const sortedTransactions = useMemo(() => {
+        return [...filteredTransactions].sort((a, b) => dayjs(b.date).diff(dayjs(a.date)));
+    }, [filteredTransactions]);
+
+    const getStudentName = (studentId?: string) => {
+        if (!studentId) return '-';
+        return students.find(s => s.id === studentId)?.name || '알 수 없는 학생';
+    };
+
+    const handlePrevMonth = () => {
+        if (selectedMonth === 1) {
+            setSelectedYear(prev => prev - 1);
+            setSelectedMonth(12);
+        } else {
+            setSelectedMonth(prev => prev - 1);
+        }
+    };
+
+    const handleNextMonth = () => {
+        if (selectedMonth === 12) {
+            setSelectedYear(prev => prev + 1);
+            setSelectedMonth(1);
+        } else {
+            setSelectedMonth(prev => prev + 1);
+        }
+    };
+
+    const handlePrint = () => {
+        window.print();
+    };
+
+    const handleExportCSV = () => {
+        if (sortedTransactions.length === 0) return;
+        
+        const headers = ['날짜', '구분', '카테고리', '금액', '학생/내용'];
+        const rows = sortedTransactions.map(t => [
+            dayjs(t.date).tz('Asia/Seoul').format('YYYY-MM-DD HH:mm'),
+            t.type,
+            t.category,
+            t.amount,
+            `${getStudentName(t.studentId)} ${t.description || ''}`.trim()
+        ]);
+        
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(r => r.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
+        
+        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `financial_report_${selectedYear}_${selectedMonth}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const yearlyStats = useMemo(() => {
+        const yearTransactions = transactions.filter(t => dayjs(t.date).tz('Asia/Seoul').year() === selectedYear);
+        const income = yearTransactions
+            .filter(t => t.type === 'Income')
+            .reduce((sum, t) => sum + t.amount, 0);
+        const expense = yearTransactions
+            .filter(t => t.type === 'Expense')
+            .reduce((sum, t) => sum + t.amount, 0);
+        
+        return {
+            income,
+            expense,
+            profit: income - expense,
+            count: yearTransactions.length
+        };
+    }, [transactions, selectedYear]);
 
     return (
-        <div className="space-y-8">
-            <h1 className="text-3xl font-bold text-gray-800">재무 리포트</h1>
-            
-            <div className="bg-white p-4 rounded-lg shadow-md border flex flex-wrap items-center gap-4">
-                 <h2 className="text-lg font-semibold text-gray-700">기간 선택:</h2>
-                <div>
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-gray-300 rounded-md py-2 px-3"/>
+        <div className="p-6 space-y-8 bg-[#F8F9FA] min-h-screen print:bg-white print:p-0">
+            {/* Header with Month Selector */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
+                <div className="flex flex-col space-y-1">
+                    <h1 className="text-3xl font-bold text-[#1A1A1A] tracking-tight">재무 리포트</h1>
+                    <p className="text-[#666] text-sm">월별 및 연간 수익 및 지출 현황을 확인하세요.</p>
                 </div>
-                <span>~</span>
-                 <div>
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-gray-300 rounded-md py-2 px-3"/>
+                
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-white px-4 py-2 rounded-2xl shadow-sm border border-[#E5E7EB] space-x-4">
+                        <button 
+                            onClick={handlePrevMonth}
+                            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            <ChevronLeft className="w-5 h-5 text-gray-500" />
+                        </button>
+                        <div className="flex items-center space-x-2 font-bold text-gray-900 min-w-[120px] justify-center">
+                            <Calendar className="w-4 h-4 text-indigo-500" />
+                            <span>{selectedYear}년 {selectedMonth}월</span>
+                        </div>
+                        <button 
+                            onClick={handleNextMonth}
+                            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            <ChevronRight className="w-5 h-5 text-gray-500" />
+                        </button>
+                        <button 
+                            onClick={() => {
+                                setSelectedYear(now.year());
+                                setSelectedMonth(now.month() + 1);
+                            }}
+                            className="text-xs font-bold text-indigo-600 hover:underline px-2"
+                        >
+                            이번 달
+                        </button>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handleExportCSV}
+                            className="p-2 bg-white border border-[#E5E7EB] rounded-xl shadow-sm hover:bg-gray-50 text-gray-600 transition-all"
+                            title="CSV 내보내기"
+                        >
+                            <Download className="w-5 h-5" />
+                        </button>
+                        <button 
+                            onClick={handlePrint}
+                            className="p-2 bg-white border border-[#E5E7EB] rounded-xl shadow-sm hover:bg-gray-50 text-gray-600 transition-all"
+                            title="인쇄하기"
+                        >
+                            <Printer className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
             </div>
-            
+
+            {/* Print Header */}
+            <div className="hidden print:block mb-8 text-center">
+                <h1 className="text-2xl font-bold">{selectedYear}년 {selectedMonth}월 재무 리포트</h1>
+                <p className="text-sm text-gray-500">출력 일시: {dayjs().format('YYYY-MM-DD HH:mm')}</p>
+            </div>
+
+            {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-blue-50 p-6 rounded-lg shadow-md border border-blue-200">
-                    <h3 className="text-sm font-medium text-blue-800">총 매출</h3>
-                    <p className="mt-2 text-3xl font-bold text-blue-900">{formatCurrency(totalRevenue)}</p>
-                </div>
-                 <div className="bg-red-50 p-6 rounded-lg shadow-md border border-red-200">
-                    <h3 className="text-sm font-medium text-red-800">총 지출</h3>
-                    <p className="mt-2 text-3xl font-bold text-red-900">{formatCurrency(totalExpense)}</p>
-                </div>
-                 <div className="bg-green-50 p-6 rounded-lg shadow-md border border-green-200">
-                    <h3 className="text-sm font-medium text-green-800">순이익</h3>
-                    <p className="mt-2 text-3xl font-bold text-green-900">{formatCurrency(netProfit)}</p>
-                </div>
-            </div>
-
-             <div className="bg-white p-6 rounded-lg shadow-md border">
-                <h2 className="text-xl font-semibold text-gray-700 mb-4">회원 분석</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-purple-50 p-6 rounded-lg border border-purple-200">
-                        <h3 className="text-sm font-medium text-purple-800">신규 회원</h3>
-                        <p className="mt-2 text-3xl font-bold text-purple-900">{newMembersCount}명</p>
-                        <p className="mt-1 text-sm text-purple-600">선택된 기간에 처음 등록하고 결제한 회원 수</p>
+                <div className="bg-white p-8 rounded-3xl shadow-sm border border-[#E5E7EB] relative overflow-hidden group print:shadow-none print:border-gray-300">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform print:hidden">
+                        <TrendingUp className="w-16 h-16 text-emerald-600" />
                     </div>
-                    <div className="bg-teal-50 p-6 rounded-lg border border-teal-200">
-                        <h3 className="text-sm font-medium text-teal-800">재등록 회원</h3>
-                        <p className="mt-2 text-3xl font-bold text-teal-900">{reregisteredMembersCount}명</p>
-                        <p className="mt-1 text-sm text-teal-600">선택된 기간에 기존 회원이 이용권을 갱신한 수</p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-lg shadow-md border">
-                    <h2 className="text-xl font-semibold text-gray-700 mb-4">매출 분석 (이용권별)</h2>
-                    {revenueByPassType.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie data={revenueByPassType} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} fill="#8884d8" labelLine={false} label={renderCustomizedLabel}>
-                                {revenueByPassType.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                            <Legend />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    ) : <div className="flex items-center justify-center h-72 text-gray-500">매출 데이터가 없습니다.</div>}
-                </div>
-                <div className="bg-white p-6 rounded-lg shadow-md border">
-                    <h2 className="text-xl font-semibold text-gray-700 mb-4">지출 분석 (카테고리별)</h2>
-                    {expenseByCategory.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie data={expenseByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} fill="#FF8042" labelLine={false} label={renderCustomizedLabel}>
-                                {expenseByCategory.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS.slice().reverse()[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                            <Legend />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    ) : <div className="flex items-center justify-center h-72 text-gray-500">지출 데이터가 없습니다.</div>}
-                </div>
-            </div>
-
-            <div className="bg-white shadow-md rounded-lg overflow-x-auto">
-                <h2 className="text-xl font-semibold text-gray-700 p-6">상세 거래 내역</h2>
-                 <table className="w-full text-sm text-left text-gray-500">
-                    <thead className="text-xs text-gray-700 uppercase bg-gray-100">
-                        <tr>
-                            <th scope="col" className="px-6 py-3">날짜</th>
-                            <th scope="col" className="px-6 py-3">구분</th>
-                            <th scope="col" className="px-6 py-3">내용</th>
-                            <th scope="col" className="px-6 py-3 text-right">금액</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {combinedTransactions.length > 0 ? combinedTransactions.map((t, i) => (
-                            <tr key={`${t.date}-${i}`} className="bg-white border-b hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap">{new Date(t.date).toLocaleDateString('ko-KR')}</td>
-                                <td className="px-6 py-4">
-                                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${t.type === '매출' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}`}>
-                                        {t.type}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4">{t.description}</td>
-                                <td className={`px-6 py-4 text-right font-medium ${t.amount > 0 ? 'text-blue-600' : 'text-red-600'}`}>{formatCurrency(t.amount)}</td>
-                            </tr>
-                        )) : (
-                            <tr>
-                                <td colSpan={4} className="text-center py-10 text-gray-500">선택된 기간에 거래 내역이 없습니다.</td>
-                            </tr>
+                    <p className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">총 매출 (Income)</p>
+                    <p className="text-3xl font-black text-emerald-600">
+                        {stats.income.toLocaleString()}원
+                    </p>
+                    <div className="mt-4 flex items-center justify-between">
+                        <div className="flex items-center text-xs text-emerald-600 font-bold bg-emerald-50 w-fit px-2 py-1 rounded-lg print:bg-transparent print:border print:border-emerald-200">
+                            <span>멤버십 & 업그레이드 포함</span>
+                        </div>
+                        {stats.incomeDiff !== 0 && (
+                            <div className={`flex items-center gap-1 text-xs font-bold ${stats.incomeDiff > 0 ? 'text-emerald-600' : 'text-rose-600'} print:hidden`}>
+                                {stats.incomeDiff > 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                {Math.abs(stats.incomeDiff).toFixed(1)}%
+                            </div>
                         )}
-                    </tbody>
-                </table>
+                    </div>
+                </div>
+
+                <div className="bg-white p-8 rounded-3xl shadow-sm border border-[#E5E7EB] relative overflow-hidden group print:shadow-none print:border-gray-300">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform print:hidden">
+                        <TrendingDown className="w-16 h-16 text-rose-600" />
+                    </div>
+                    <p className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">총 지출 (Expense)</p>
+                    <p className="text-3xl font-black text-rose-600">
+                        {stats.expense.toLocaleString()}원
+                    </p>
+                    <div className="mt-4 flex items-center justify-between">
+                        <div className="flex items-center text-xs text-rose-600 font-bold bg-rose-50 w-fit px-2 py-1 rounded-lg print:bg-transparent print:border print:border-rose-200">
+                            <span>환불 & 일반 지출 포함</span>
+                        </div>
+                        {stats.expenseDiff !== 0 && (
+                            <div className={`flex items-center gap-1 text-xs font-bold ${stats.expenseDiff > 0 ? 'text-rose-600' : 'text-emerald-600'} print:hidden`}>
+                                {stats.expenseDiff > 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                {Math.abs(stats.expenseDiff).toFixed(1)}%
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-white p-8 rounded-3xl shadow-sm border border-[#E5E7EB] relative overflow-hidden group print:shadow-none print:border-gray-300">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform print:hidden">
+                        <Wallet className="w-16 h-16 text-indigo-600" />
+                    </div>
+                    <p className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">순수익 (Net Profit)</p>
+                    <p className={`text-3xl font-black ${stats.profit >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                        {stats.profit.toLocaleString()}원
+                    </p>
+                    <div className={`mt-4 flex items-center text-xs font-bold w-fit px-2 py-1 rounded-lg print:bg-transparent print:border ${stats.profit >= 0 ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-rose-50 text-rose-600 border-rose-200'}`}>
+                        <span>{stats.profit >= 0 ? '수익 발생' : '손실 발생'}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Category Breakdown */}
+                <div className="lg:col-span-1 space-y-6">
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-[#E5E7EB] print:shadow-none print:border-gray-300">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <PieChartIcon className="w-5 h-5 text-indigo-500" />
+                                카테고리별 요약
+                            </h2>
+                        </div>
+                        
+                        {categoryBreakdown.length > 0 ? (
+                            <div className="space-y-8">
+                                <div className="h-[200px] w-full print:hidden">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={chartData}
+                                                cx="50%"
+                                                cy="50%"
+                                                innerRadius={60}
+                                                outerRadius={80}
+                                                paddingAngle={5}
+                                                dataKey="value"
+                                            >
+                                                {chartData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip 
+                                                formatter={(value: number) => `${value.toLocaleString()}원`}
+                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                            />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                <div className="space-y-6">
+                                    {categoryBreakdown.map((cat, idx) => (
+                                        <div key={idx} className="space-y-2">
+                                            <div className="flex justify-between text-sm">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                                                    <span className="font-bold text-gray-700">{cat.name}</span>
+                                                </div>
+                                                <span className="text-gray-500 font-medium">{cat.total.toLocaleString()}원</span>
+                                            </div>
+                                            <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden flex">
+                                                {cat.income > 0 && (
+                                                    <div 
+                                                        className="h-full bg-emerald-400" 
+                                                        style={{ width: `${(cat.income / cat.total) * 100}%` }}
+                                                    />
+                                                )}
+                                                {cat.expense > 0 && (
+                                                    <div 
+                                                        className="h-full bg-rose-400" 
+                                                        style={{ width: `${(cat.expense / cat.total) * 100}%` }}
+                                                    />
+                                                )}
+                                            </div>
+                                            <div className="flex justify-between text-[10px] font-bold">
+                                                <span className="text-emerald-600">수입: {cat.income.toLocaleString()}원</span>
+                                                <span className="text-rose-600">지출: {cat.expense.toLocaleString()}원</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <div className="pt-4 border-t border-gray-100">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm font-black text-gray-900">합계</span>
+                                            <span className="text-lg font-black text-indigo-600">{(stats.income + stats.expense).toLocaleString()}원</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="py-12 text-center text-gray-400 text-sm italic">
+                                데이터가 없습니다.
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Yearly Overview */}
+                    <div className="bg-indigo-600 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden print:bg-white print:text-gray-900 print:border print:border-gray-300 print:shadow-none">
+                        <div className="absolute top-0 right-0 p-4 opacity-20 print:hidden">
+                            <Calendar className="w-20 h-20" />
+                        </div>
+                        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                            <TrendingUp className="w-5 h-5" />
+                            {selectedYear}년 누적 현황
+                        </h2>
+                        <div className="space-y-4 relative z-10">
+                            <div className="flex justify-between items-end">
+                                <span className="text-xs opacity-80">총 매출</span>
+                                <span className="text-xl font-black">{yearlyStats.income.toLocaleString()}원</span>
+                            </div>
+                            <div className="flex justify-between items-end">
+                                <span className="text-xs opacity-80">총 지출</span>
+                                <span className="text-xl font-black">{yearlyStats.expense.toLocaleString()}원</span>
+                            </div>
+                            <div className="pt-4 border-t border-white/20 flex justify-between items-end">
+                                <span className="text-sm font-bold">누적 순수익</span>
+                                <span className="text-2xl font-black">{yearlyStats.profit.toLocaleString()}원</span>
+                            </div>
+                            <p className="text-[10px] opacity-60 text-right">총 {yearlyStats.count}건의 거래</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Transaction History */}
+                <div className="lg:col-span-2">
+                    <div className="bg-white rounded-3xl shadow-sm border border-[#E5E7EB] overflow-hidden print:shadow-none print:border-gray-300">
+                        <div className="p-6 border-b border-[#E5E7EB] flex justify-between items-center bg-white">
+                            <h2 className="text-lg font-bold text-[#1A1A1A]">상세 거래 내역</h2>
+                            <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full print:border print:border-gray-300">
+                                총 {filteredTransactions.length}건
+                            </span>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-[#F9FAFB] border-b border-[#E5E7EB]">
+                                        <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">날짜</th>
+                                        <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">구분</th>
+                                        <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">카테고리</th>
+                                        <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">금액</th>
+                                        <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">학생/내용</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#E5E7EB]">
+                                    {sortedTransactions.map((t) => (
+                                        <tr key={t.id} className="hover:bg-[#F9FAFB] transition-colors group print:hover:bg-transparent">
+                                            <td className="px-6 py-4">
+                                                <div className="text-xs font-bold text-gray-400 mb-1">
+                                                    {dayjs(t.date).tz('Asia/Seoul').format('MM/DD')}
+                                                </div>
+                                                <div className="text-[10px] text-gray-400">
+                                                    {dayjs(t.date).tz('Asia/Seoul').format('HH:mm')}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-tighter ${
+                                                    t.type === 'Income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                                                } print:bg-transparent print:border ${t.type === 'Income' ? 'print:border-emerald-200' : 'print:border-rose-200'}`}>
+                                                    {t.type === 'Income' ? 'Income' : 'Expense'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="text-sm font-bold text-gray-700">{t.category}</div>
+                                            </td>
+                                            <td className={`px-6 py-4 text-sm font-black ${
+                                                t.type === 'Income' ? 'text-emerald-600' : 'text-rose-600'
+                                            }`}>
+                                                {t.type === 'Income' ? '+' : '-'}{t.amount.toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-bold text-gray-900">{getStudentName(t.studentId)}</span>
+                                                    <span className="text-[10px] text-gray-400 truncate max-w-[150px]">{t.description || '-'}</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {filteredTransactions.length === 0 && (
+                                        <tr>
+                                            <td colSpan={5} className="px-6 py-20 text-center text-gray-400 text-sm italic">
+                                                선택하신 기간에 거래 내역이 없습니다.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );
 };
+

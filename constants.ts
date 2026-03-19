@@ -1,5 +1,24 @@
 
+import dayjs from 'dayjs';
 import { PassType, ExpenseCategory, ClassSchedule } from './types';
+
+export const calculateEndDate = (startDate: Date | string, passType: PassType): Date => {
+    const duration = PASS_DURATIONS[passType];
+    let end = dayjs(startDate);
+
+    if (duration.unit === 'month') {
+        const monthsToAdd = duration.value;
+        // Calculate days to subtract based on rule:
+        // 1~3 months -> -1 day
+        // 6 months -> -2 days
+        const daysToSubtract = Math.max(1, Math.floor(monthsToAdd / 3));
+        end = end.add(monthsToAdd, 'month').subtract(daysToSubtract, 'day');
+    } else {
+        // Day based
+        end = end.add(duration.value - 1, 'day');
+    }
+    return end.toDate();
+};
 
 export const PASS_OPTIONS: { label: PassType; value: PassType }[] = [
     { label: PassType.ONE_DAY, value: PassType.ONE_DAY },

@@ -1,8 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import { Student, AttendanceRecord, Membership, ClassSchedule } from '../types';
 import { CLASS_COLORS } from '../constants';
 import { SearchIcon, CloseIcon, PlusIcon } from './icons';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault('Asia/Seoul');
 
 interface AttendanceManagerProps {
     students: Student[];
@@ -12,6 +18,7 @@ interface AttendanceManagerProps {
     toggleAttendance?: (studentId: string, date: string, classTime: string, classId?: string) => void;
     addOrUpdateSchedule?: (classData: ClassSchedule) => void;
     deleteSchedule?: (classId: string) => void;
+    updateStudent?: (studentId: string, updates: Partial<Student>) => void;
 }
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -26,34 +33,52 @@ const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, target
     const toISODate = (d: any) => {
         try {
             if (!d) return '';
-            const cleanStr = String(d)
-                .replace(/년|월/g, '-')
-                .replace(/일/g, '')
-                .replace(/\./g, '-')
-                .replace(/\//g, '-')
-                .replace(/\s/g, '');
-            const parsed = dayjs(cleanStr);
-            if (parsed.isValid()) return parsed.format('YYYY-MM-DD');
-            return String(d);
-        } catch {
-            return String(d);
+            // Handle various formats and ensure it's treated as KST if it's just a date string
+            let dateObj;
+            if (typeof d === 'string') {
+                const cleanStr = d
+                    .replace(/년|월/g, '-')
+                    .replace(/일/g, '')
+                    .replace(/\./g, '-')
+                    .replace(/\//g, '-')
+                    .replace(/\s/g, ' ')
+                    .trim();
+                
+                // If it looks like YYYY-MM-DD, parse it in KST
+                if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+                    dateObj = dayjs.tz(cleanStr, 'Asia/Seoul');
+                } else {
+                    dateObj = dayjs(cleanStr);
+                }
+            } else {
+                dateObj = dayjs(d);
+            }
+
+            if (dateObj.isValid()) {
+                // Always convert to KST before formatting to YYYY-MM-DD
+                return dateObj.tz('Asia/Seoul').format('YYYY-MM-DD');
+            }
+            return '';
+        } catch (e) {
+            console.error('Date parsing error:', e);
+            return '';
         }
     };
 
     const rDate = toISODate((record as any).attendance_date || (record as any)['출석 날짜'] || record.date);
     const tDate = toISODate(targetDate);
 
-    if (rDate !== tDate) return false;
+    if (!rDate || !tDate || rDate !== tDate) return false;
 
     const rawDbInfo = String((record as any).class_info || (record as any)['수업 시간 정보'] || record.classTime || '');
     const targetClassInfo = `${classItem.startTime} - ${classItem.className}`;
     
-    // 1순위: 정확한 class_info 매칭
-    if (rawDbInfo === targetClassInfo) return true;
-    
-    // 2순위: classId 매칭
+    // 1순위: 정확한 classId 매칭 (가장 확실함)
     if (record.classId && classItem.id && record.classId === classItem.id) return true;
 
+    // 2순위: 정확한 class_info 매칭
+    if (rawDbInfo === targetClassInfo) return true;
+    
     // 3순위: 과거 데이터 호환성 (공백 무시 부분 일치)
     const dbInfoNoSpace = rawDbInfo.replace(/\s/g, '');
     const targetName = (classItem.className || '').replace(/\s/g, '');
@@ -87,10 +112,12 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
     }, [startCalendar, endCalendar]);
 
     const getDailyAttendanceCount = (date: dayjs.Dayjs) => {
-        const dateStr = date.format('YYYY-MM-DD');
+        const dateStr = date.tz('Asia/Seoul').format('YYYY-MM-DD');
         return attendance.filter((a: any) => {
-            const rDate = (a.attendance_date || a['출석 날짜'] || a.date || '').replace(/년|월/g, '-').replace(/일/g, '').replace(/\./g, '-').replace(/\//g, '-').replace(/\s/g, '');
-            const parsed = dayjs(rDate);
+            const rawDate = a.attendance_date || a['출석 날짜'] || a.date || '';
+            if (!rawDate) return false;
+            
+            const parsed = dayjs(rawDate).tz('Asia/Seoul');
             return parsed.isValid() && parsed.format('YYYY-MM-DD') === dateStr;
         }).length;
     };
@@ -296,6 +323,7 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
                     memberships={memberships}
                     attendance={attendance}
                     toggleAttendance={toggleAttendance}
+                    updateStudent={props.updateStudent}
                     classInfo={modalInfo.data}
                 />
             }
@@ -320,26 +348,27 @@ const ClassAttendanceModal: React.FC<{
     memberships: Membership[];
     attendance: AttendanceRecord[];
     toggleAttendance?: any;
+    updateStudent?: (studentId: string, updates: Partial<Student>) => void;
     classInfo: { classItem: ClassSchedule, date: dayjs.Dayjs } 
-}> = ({ isOpen, onClose, students, memberships, attendance, toggleAttendance, classInfo }) => {
+}> = ({ isOpen, onClose, students, memberships, attendance, toggleAttendance, updateStudent, classInfo }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const { classItem, date } = classInfo;
     const dateString = date.format('YYYY-MM-DD');
     const classTimeString = `${classItem.startTime} - ${classItem.className}`;
 
     const displayStudents = useMemo(() => {
-        const targetDate = date.startOf('day');
+        const targetDate = date.tz('Asia/Seoul').startOf('day');
         
         // 1. Get active students
         const active = students.filter(student => {
             const studentMemberships = memberships.filter(m => m.studentId === student.id);
             return studentMemberships.some(membership => {
-                const startDate = dayjs(membership.startDate).startOf('day');
-                const endDate = dayjs(membership.endDate).startOf('day');
+                const startDate = dayjs(membership.startDate).tz('Asia/Seoul').startOf('day');
+                const endDate = dayjs(membership.endDate).tz('Asia/Seoul').startOf('day');
                 
                 if (membership.holdStartDate && membership.holdEndDate) {
-                    const holdStart = dayjs(membership.holdStartDate).startOf('day');
-                    const holdEnd = dayjs(membership.holdEndDate).startOf('day');
+                    const holdStart = dayjs(membership.holdStartDate).tz('Asia/Seoul').startOf('day');
+                    const holdEnd = dayjs(membership.holdEndDate).tz('Asia/Seoul').startOf('day');
                     if ((targetDate.isAfter(holdStart) || targetDate.isSame(holdStart)) && (targetDate.isBefore(holdEnd) || targetDate.isSame(holdEnd))) return false;
                 }
                 return (targetDate.isAfter(startDate) || targetDate.isSame(startDate)) && (targetDate.isBefore(endDate) || targetDate.isSame(endDate)) && !membership.refundAmount;
@@ -399,17 +428,28 @@ const ClassAttendanceModal: React.FC<{
                     {displayStudents.map(student => {
                         const record = getAttendanceRecord(student.id);
                         return (
-                            <div key={student.id} className="p-4 flex justify-between items-center bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors">
-                                <div>
-                                    <p className="font-bold text-gray-900">{student.name}</p>
-                                    <p className="text-[10px] text-gray-400 font-medium">{student.phone}</p>
+                            <div key={student.id} className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <p className="font-bold text-gray-900">{student.name}</p>
+                                        <p className="text-[10px] text-gray-400 font-medium">{student.phone}</p>
+                                    </div>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={!!record} 
+                                        onChange={() => toggleAttendance && toggleAttendance(student.id, dateString, classTimeString, classItem.id, record?.id)} 
+                                        className="h-6 w-6 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                    />
                                 </div>
-                                <input 
-                                    type="checkbox" 
-                                    checked={!!record} 
-                                    onChange={() => toggleAttendance && toggleAttendance(student.id, dateString, classTimeString, classItem.id, record?.id)} 
-                                    className="h-6 w-6 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                />
+                                <div>
+                                    <textarea
+                                        placeholder="특이사항 입력..."
+                                        value={student.notes || ''}
+                                        onChange={(e) => updateStudent && updateStudent(student.id, { notes: e.target.value })}
+                                        className="w-full text-[11px] p-2 bg-white border border-gray-100 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
+                                        rows={1}
+                                    />
+                                </div>
                             </div>
                         );
                     })}

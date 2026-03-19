@@ -1,8 +1,16 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import dayjs from 'dayjs';
-import { Student, Membership, AttendanceRecord, PassType } from '../types';
-import { SearchIcon, CloseIcon } from './icons';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+import { Student, Membership, AttendanceRecord, PassType, Transaction } from '../types';
+import { SearchIcon, CloseIcon, DownloadIcon, FinancialsIcon } from './icons';
+import { PASS_PRICES } from '../constants';
+import * as XLSX from 'xlsx';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault('Asia/Seoul');
 
 interface ActiveMemberManagerProps {
     students: Student[];
@@ -10,6 +18,7 @@ interface ActiveMemberManagerProps {
     attendance: AttendanceRecord[];
     updateStudent: (studentId: string, updates: Partial<Student>) => void;
     updateStudentAndMembership?: (studentId: string, membershipId: string, studentUpdates: Partial<Student>, membershipUpdates: Partial<Membership>) => void;
+    upgradeMembership?: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
 }
 
 const MemoInput = ({ value, onSave }: { value: string, onSave: (val: string) => void }) => {
@@ -42,10 +51,16 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
     memberships, 
     attendance,
     updateStudent,
-    updateStudentAndMembership
+    updateStudentAndMembership,
+    upgradeMembership
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingMember, setEditingMember] = useState<(Student & { membership?: Membership }) | null>(null);
+    const [showUpgradeUI, setShowUpgradeUI] = useState(false);
+    const [upgradePassType, setUpgradePassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
+    const [upgradePaymentMethod, setUpgradePaymentMethod] = useState<'카드' | '현금'>('카드');
+    const [upgradeCashReceipt, setUpgradeCashReceipt] = useState(false);
+
     const [editForm, setEditForm] = useState({
         name: '',
         phone: '',
@@ -100,6 +115,30 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         setEditingMember(null);
     };
 
+    const calculateUpgradeInfo = () => {
+        if (!editingMember?.membership) return null;
+        const original = editingMember.membership;
+        const today = dayjs().tz('Asia/Seoul');
+        const startDate = dayjs(original.startDate).tz('Asia/Seoul');
+        const endDate = dayjs(original.endDate).tz('Asia/Seoul');
+
+        const totalDays = endDate.diff(startDate, 'day');
+        const remainingDays = Math.max(0, endDate.diff(today, 'day'));
+        
+        const remainingValue = totalDays > 0 ? Math.floor((original.price / totalDays) * remainingDays) : 0;
+        const newFullPrice = PASS_PRICES[upgradePassType];
+        const upgradeCost = newFullPrice - remainingValue;
+
+        return { remainingValue, upgradeCost };
+    };
+
+    const handleUpgrade = () => {
+        if (!editingMember?.membership || !upgradeMembership) return;
+        upgradeMembership(editingMember.membership.id, upgradePassType, upgradePaymentMethod, upgradeCashReceipt);
+        setEditingMember(null);
+        setShowUpgradeUI(false);
+    };
+
     const activeMembers = useMemo(() => {
         const today = dayjs().startOf('day');
         return students.map(student => {
@@ -145,6 +184,23 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                 (m.phone || '').includes(searchTerm)
             );
     }, [activeMembers, searchTerm]);
+
+    const exportToExcel = () => {
+        const data = filteredMembers.map(m => ({
+            '이름': m.name,
+            '연락처': m.phone,
+            '이용권': m.membership?.passType || '-',
+            '시작일': m.membership ? dayjs(m.membership.startDate).format('YYYY-MM-DD') : '-',
+            '만료일': m.membership ? dayjs(m.membership.endDate).format('YYYY-MM-DD') : '-',
+            '잔여일수': m.membership ? Math.max(0, dayjs(m.membership.endDate).diff(dayjs(), 'day')) : 0,
+            '메모': m.memo || '-'
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "유효 회원 목록");
+        XLSX.writeFile(workbook, `유효회원목록_${dayjs().format('YYYYMMDD')}.xlsx`);
+    };
 
     const formatDate = (dateStr: string) => {
         if (!dateStr) return '-';
@@ -200,6 +256,13 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                     <p className="text-gray-500 mt-1">현재 유효 회원 총 {activeMembers.length}명</p>
                 </div>
                 <div className="flex gap-4">
+                    <button 
+                        onClick={exportToExcel}
+                        className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm text-sm font-medium"
+                    >
+                        <DownloadIcon className="w-4 h-4" />
+                        <span>Excel 내보내기</span>
+                    </button>
                     <div className="relative">
                         <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
@@ -269,62 +332,227 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             </div>
 
             {editingMember && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
-                    <div className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-2xl font-bold text-gray-900">회원 및 이용권 수정</h2>
-                            <button onClick={() => setEditingMember(null)} className="text-gray-400 hover:text-gray-600">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4 overflow-y-auto">
+                    <div className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-2xl my-8">
+                        <div className="flex justify-between items-center mb-8">
+                            <h3 className="text-2xl font-bold text-gray-900">회원 및 이용권 수정</h3>
+                            <button onClick={() => { setEditingMember(null); setShowUpgradeUI(false); }} className="text-gray-400 hover:text-gray-600">
                                 <CloseIcon className="w-6 h-6" />
                             </button>
                         </div>
-                        
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
-                                <input type="text" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">연락처</label>
-                                <input type="text" value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">이용권 종류</label>
-                                <select value={editForm.passType} onChange={e => setEditForm({...editForm, passType: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
-                                    {Object.values(PassType).map(pt => (
-                                        <option key={pt} value={pt}>{pt}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">시작일</label>
-                                    <input type="date" value={editForm.startDate} onChange={e => setEditForm({...editForm, startDate: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">만료일 (수동)</label>
-                                    <input type="date" value={editForm.endDate} onChange={e => setEditForm({...editForm, endDate: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
-                                </div>
-                            </div>
-                            
-                            <div className="pt-4 border-t border-gray-100">
-                                <h3 className="text-sm font-bold text-gray-900 mb-3">홀딩 (일시정지) 설정</h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">홀딩 시작일</label>
-                                        <input type="date" value={editForm.holdStartDate} onChange={e => setEditForm({...editForm, holdStartDate: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">홀딩 종료일</label>
-                                        <input type="date" value={editForm.holdEndDate} onChange={e => setEditForm({...editForm, holdEndDate: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" />
-                                    </div>
-                                </div>
-                                <p className="text-xs text-indigo-600 mt-2">* 홀딩 기간을 설정하면 만료일이 자동으로 연장됩니다.</p>
-                            </div>
 
-                            <button onClick={handleEditSubmit} className="w-full py-4 mt-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors">
-                                저장하기
+                        <div className="flex p-1 bg-gray-100 rounded-xl mb-8">
+                            <button
+                                type="button"
+                                onClick={() => setShowUpgradeUI(false)}
+                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!showUpgradeUI ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}
+                            >
+                                기본 정보 수정
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowUpgradeUI(true)}
+                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${showUpgradeUI ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}
+                            >
+                                이용권 업그레이드
                             </button>
                         </div>
+
+                        {!showUpgradeUI ? (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">이름</label>
+                                        <input
+                                            type="text"
+                                            value={editForm.name}
+                                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">연락처</label>
+                                        <input
+                                            type="text"
+                                            value={editForm.phone}
+                                            onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">이용권 종류</label>
+                                        <select
+                                            value={editForm.passType}
+                                            onChange={(e) => setEditForm({ ...editForm, passType: e.target.value })}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        >
+                                            {Object.values(PassType).map(type => (
+                                                <option key={type} value={type}>{type}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">시작일</label>
+                                        <input
+                                            type="date"
+                                            value={editForm.startDate}
+                                            onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">만료일 (직접 수정)</label>
+                                        <input
+                                            type="date"
+                                            value={editForm.endDate}
+                                            onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="p-6 bg-amber-50 rounded-2xl border border-amber-100">
+                                    <h4 className="text-sm font-bold text-amber-800 mb-4 flex items-center gap-2">
+                                        <span>⏸️</span> 이용권 홀딩 (일시정지)
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-1">홀딩 시작일</label>
+                                            <input
+                                                type="date"
+                                                value={editForm.holdStartDate}
+                                                onChange={(e) => setEditForm({ ...editForm, holdStartDate: e.target.value })}
+                                                className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-1">홀딩 종료일</label>
+                                            <input
+                                                type="date"
+                                                value={editForm.holdEndDate}
+                                                onChange={(e) => setEditForm({ ...editForm, holdEndDate: e.target.value })}
+                                                className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-[10px] text-amber-600 mt-3 font-medium">* 홀딩 기간만큼 만료일이 자동 연장됩니다.</p>
+                                </div>
+
+                                <div className="flex gap-4 pt-6">
+                                    <button
+                                        onClick={() => { setEditingMember(null); setShowUpgradeUI(false); }}
+                                        className="flex-1 px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-all"
+                                    >
+                                        취소
+                                    </button>
+                                    <button
+                                        onClick={handleEditSubmit}
+                                        className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100"
+                                    >
+                                        수정 완료
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h4 className="text-sm font-bold text-indigo-800">현재 이용권 정보</h4>
+                                        <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-md">Active</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                            <p className="text-gray-500 text-xs">이용권</p>
+                                            <p className="font-bold text-gray-900">{editingMember?.membership?.passType}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-gray-500 text-xs">남은 가치 (일할 계산)</p>
+                                            <p className="font-bold text-indigo-600">{calculateUpgradeInfo()?.remainingValue.toLocaleString()}원</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">새로운 이용권 선택</label>
+                                        <select
+                                            value={upgradePassType}
+                                            onChange={(e) => setUpgradePassType(e.target.value as PassType)}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        >
+                                            {Object.values(PassType).map(type => (
+                                                <option key={type} value={type}>{type} - {PASS_PRICES[type].toLocaleString()}원</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">결제 수단</label>
+                                            <div className="flex gap-2">
+                                                {(['카드', '현금'] as const).map(method => (
+                                                    <button
+                                                        key={method}
+                                                        type="button"
+                                                        onClick={() => setUpgradePaymentMethod(method)}
+                                                        className={`flex-1 py-3 rounded-xl font-bold border transition-all ${upgradePaymentMethod === method ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-gray-200 text-gray-400'}`}
+                                                    >
+                                                        {method}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {upgradePaymentMethod === '현금' && (
+                                            <div className="flex items-end pb-1">
+                                                <label className="flex items-center gap-2 cursor-pointer p-3 bg-amber-50 rounded-xl border border-amber-100 w-full">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={upgradeCashReceipt}
+                                                        onChange={(e) => setUpgradeCashReceipt(e.target.checked)}
+                                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                                    />
+                                                    <span className="text-xs font-bold text-amber-800">현금영수증 발행</span>
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm font-bold text-emerald-800">최종 업그레이드 결제 금액</span>
+                                        <span className="text-2xl font-black text-emerald-600">
+                                            {calculateUpgradeInfo()?.upgradeCost.toLocaleString()}원
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-emerald-600 mt-2 font-medium">
+                                        * (새 이용권 가격) - (기존 이용권 남은 가치)로 계산되었습니다.
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-4 pt-6">
+                                    <button
+                                        onClick={() => { setEditingMember(null); setShowUpgradeUI(false); }}
+                                        className="flex-1 px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-all"
+                                    >
+                                        취소
+                                    </button>
+                                    <button
+                                        onClick={handleUpgrade}
+                                        disabled={calculateUpgradeInfo()?.upgradeCost! < 0}
+                                        className="flex-1 px-6 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        업그레이드 확정
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
