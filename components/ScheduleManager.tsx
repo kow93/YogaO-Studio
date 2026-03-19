@@ -56,24 +56,9 @@ function parseCsvLine(line: string): string[] {
 const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, targetDate: string) => {
     // 1. Aggressive Date Normalization (YYYY-MM-DD)
     const toISODate = (d: any) => {
-        try {
-            if (!d) return '';
-            // Handle "YYYY. MM. DD." or "YYYY/MM/DD" or "YYYY년 MM월 DD일"
-            // Remove all non-digit chars except separators if possible, or just parse
-            // Simplest: use dayjs but handle common Korean separators
-            const cleanStr = String(d)
-                .replace(/년|월/g, '-')
-                .replace(/일/g, '')
-                .replace(/\./g, '-')
-                .replace(/\//g, '-')
-                .replace(/\s/g, '');
-            
-            const parsed = dayjs(cleanStr);
-            if (parsed.isValid()) return parsed.format('YYYY-MM-DD');
-            return String(d);
-        } catch {
-            return String(d);
-        }
+        if (!d) return '';
+        const parsed = dayjs(d);
+        return parsed.isValid() ? parsed.format('YYYY-MM-DD') : '';
     };
 
     const rDate = toISODate(record.date);

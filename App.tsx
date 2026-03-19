@@ -54,112 +54,105 @@ const App: React.FC = () => {
 
     const supabase = (window as any)._supabase;
 
-    React.useEffect(() => {
-        const fetchData = async () => {
-            if (!supabase) return;
-            const [
-                { data: studentsData, error: studentError },
-                { data: membershipsData, error: membershipError },
-                { data: attendanceData, error: attendanceError },
-                { data: expensesData, error: expenseError },
-                { data: transactionsData, error: transactionError },
-                { data: classesData, error: classError }
-            ] = await Promise.all([
-                supabase.from('student').select('*'),
-                supabase.from('membership').select('*'),
-                supabase.from('attendance').select('*'),
-                supabase.from('expense').select('*'),
-                supabase.from('transaction_history').select('*'),
-                supabase.from('classes').select('*')
-            ]);
-            
-            console.log('--- Supabase Raw Data ---');
-            console.log('students:', studentsData, studentError);
-            console.log('membership:', membershipsData, membershipError);
-            console.log('attendance:', attendanceData, attendanceError);
-            console.log('expense:', expensesData, expenseError);
-            console.log('classes:', classesData, classError);
-            console.log('-------------------------');
-            
-            if (studentsData) {
-                const mappedStudents = studentsData.map((s: any) => ({
-                    ...s,
-                    id: s.student_id || s.id,
-                    phone: s.phone ? String(s.phone).padStart(11, '0') : '',
-                    registrationDate: s.registration_date || s.registrationDate
-                }));
-                setStudents(mappedStudents);
-            }
-            if (membershipsData) {
-                const mapped = membershipsData.map((m: any) => ({
-                    id: m.id,
-                    studentId: m.student_id || m.studentId,
-                    passType: m.pass_type || m.passType,
-                    startDate: m.start_date || m.startDate,
-                    endDate: m.end_date || m.endDate,
-                    price: m.price,
-                    discountAmount: m.discount_amount || m.discountAmount,
-                    refundAmount: m.refund_amount || m.refundAmount,
-                    paymentDate: m.payment_date || m.paymentDate,
-                    holdStartDate: m.hold_start_date || m.holdStartDate,
-                    holdEndDate: m.hold_end_date || m.holdEndDate,
-                    paymentMethod: m.payment_method || m.paymentMethod,
-                    cashReceiptIssued: m.cash_receipt_issued || m.cashReceiptIssued,
-                }));
-                setMemberships(mapped);
-            }
-            if (attendanceData) {
-                const mapped = attendanceData.map((a: any) => ({
-                    id: a.id,
-                    studentId: a.student_id || a.studentId,
-                    studentName: a.name || a['이름'] || a.studentName,
-                    studentPhone: a.phone || a['연락처'] || a.studentPhone,
-                    classId: a.class_id || a.classId,
-                    date: a.attendance_date || a['출석 날짜'] || a.date,
-                    classTime: a.class_info || a['수업 시간 정보'] || a.classTime,
-                }));
-                setAttendance(mapped);
-            }
-            if (expensesData) {
-                const mappedExpenses = expensesData.map((e: any) => ({
-                    id: e.id,
-                    date: e.날짜 || e.date,
-                    category: e.분류 || e.category,
-                    description: e.내용 || e.description,
-                    amount: typeof (e.금액 || e.amount) === 'string' 
-                        ? Number((e.금액 || e.amount).replace(/[^0-9.-]+/g,"")) 
-                        : Number(e.금액 || e.amount),
-                    transactionId: e.transaction_id || e.transactionId
-                }));
-                setExpenses(mappedExpenses);
-            }
-            if (transactionsData) {
-                const mapped = transactionsData.map((t: any) => ({
-                    id: t.id,
-                    type: t.type,
-                    category: t.category,
-                    amount: t.amount,
-                    date: t.date,
-                    description: t.description,
-                    studentId: t.student_id,
-                    membershipId: t.membership_id
-                }));
-                setTransactions(mapped);
-            }
-            if (classesData) {
-                const mappedClasses = classesData.map((c: any) => ({
-                    id: c.id,
-                    dayOfWeek: c.day_of_week || c.dayOfWeek,
-                    startTime: c.start_time || c.startTime,
-                    endTime: c.end_time || c.endTime,
-                    className: c.class_name || c.className,
-                    color: c.color
-                }));
-                setSchedule(mappedClasses);
-            }
-        };
-        fetchData();
+    const fetchData = useCallback(async () => {
+        if (!supabase) return;
+        const [
+            { data: studentsData, error: studentError },
+            { data: membershipsData, error: membershipError },
+            { data: attendanceData, error: attendanceError },
+            { data: expensesData, error: expenseError },
+            { data: transactionsData, error: transactionError },
+            { data: classesData, error: classError }
+        ] = await Promise.all([
+            supabase.from('student').select('*'),
+            supabase.from('membership').select('*'),
+            supabase.from('attendance').select('*'),
+            supabase.from('expense').select('*'),
+            supabase.from('transaction_history').select('*'),
+            supabase.from('classes').select('*')
+        ]);
+        
+        if (studentsData) {
+            const mappedStudents = studentsData.map((s: any) => ({
+                ...s,
+                id: s.student_id || s.id,
+                phone: s.phone ? String(s.phone).padStart(11, '0') : '',
+                registrationDate: s.registration_date || s.registrationDate
+            }));
+            setStudents(mappedStudents);
+        }
+        if (membershipsData) {
+            const mapped = membershipsData.map((m: any) => ({
+                id: m.id,
+                studentId: m.student_id || m.studentId,
+                passType: m.pass_type || m.passType,
+                startDate: m.start_date || m.startDate,
+                endDate: m.end_date || m.endDate,
+                price: m.price,
+                discountAmount: m.discount_amount || m.discountAmount,
+                refundAmount: m.refund_amount || m.refundAmount,
+                paymentDate: m.payment_date || m.paymentDate,
+                holdStartDate: m.hold_start_date || m.holdStartDate,
+                holdEndDate: m.hold_end_date || m.holdEndDate,
+                paymentMethod: m.payment_method || m.paymentMethod,
+                cashReceiptIssued: m.cash_receipt_issued || m.cashReceiptIssued,
+            }));
+            setMemberships(mapped);
+        }
+        if (attendanceData) {
+            const mapped = attendanceData.map((a: any) => ({
+                id: a.id,
+                studentId: a.student_id || a.studentId,
+                studentName: a.name || a['이름'] || a.studentName,
+                studentPhone: a.phone || a['연락처'] || a.studentPhone,
+                classId: a.class_id || a.classId,
+                date: a.attendance_date || a['출석 날짜'] || a.date,
+                classTime: a.class_info || a['수업 시간 정보'] || a.classTime,
+            }));
+            setAttendance(mapped);
+        }
+        if (expensesData) {
+            const mappedExpenses = expensesData.map((e: any) => ({
+                id: e.id,
+                date: e.날짜 || e.date,
+                category: e.분류 || e.category,
+                description: e.내용 || e.description,
+                amount: typeof (e.금액 || e.amount) === 'string' 
+                    ? Number((e.금액 || e.amount).replace(/[^0-9.-]+/g,"")) 
+                    : Number(e.금액 || e.amount),
+                transactionId: e.transaction_id || e.transactionId
+            }));
+            setExpenses(mappedExpenses);
+        }
+        if (transactionsData) {
+            const mapped = transactionsData.map((t: any) => ({
+                id: t.id,
+                type: t.type,
+                category: t.category,
+                amount: t.amount,
+                date: t.date,
+                description: t.description,
+                studentId: t.student_id,
+                membershipId: t.membership_id
+            }));
+            setTransactions(mapped);
+        }
+        if (classesData) {
+            const mappedClasses = classesData.map((c: any) => ({
+                id: c.id,
+                dayOfWeek: c.day_of_week || c.dayOfWeek,
+                startTime: c.start_time || c.startTime,
+                endTime: c.end_time || c.endTime,
+                className: c.class_name || c.className,
+                color: c.color
+            }));
+            setSchedule(mappedClasses);
+        }
     }, [supabase]);
+
+    React.useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     const addStudent = useCallback(async (
         studentData: Omit<Student, 'id' | 'registrationDate'>, 
@@ -807,20 +800,30 @@ const App: React.FC = () => {
    }, [supabase]);
 
     const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string, existingRecordId?: string) => {
+        const formattedDate = dayjs(date).format('YYYY-MM-DD');
+        
         const exists = existingRecordId ? attendance.find(a => a.id === existingRecordId) : attendance.find(a => {
+            const aDate = dayjs(a.date).format('YYYY-MM-DD');
             if (classId && a.classId) {
-                return a.studentId === studentId && a.date === date && a.classId === classId;
+                return a.studentId === studentId && aDate === formattedDate && a.classId === classId;
             }
-            return a.studentId === studentId && a.date === date && a.classTime === classTime;
+            return a.studentId === studentId && aDate === formattedDate && a.classTime === classTime;
         });
 
         if (exists) {
+            // Optimistic update
             setAttendance(prev => prev.filter(a => a.id !== exists.id));
+            
             if (supabase) {
                 const { error } = await supabase.from('attendance').delete().eq('attendance_id', exists.id);
                 if (error) {
                     alert("출석 삭제 중 오류가 발생했습니다: " + error.message);
                     console.error(error);
+                    // Rollback or refetch
+                    fetchData();
+                } else {
+                    // Always refetch to ensure sync
+                    fetchData();
                 }
             }
         } else {
@@ -828,29 +831,39 @@ const App: React.FC = () => {
             const newRecord = { 
                 id: crypto.randomUUID(), 
                 studentId, 
-                date, 
+                date: formattedDate, 
                 classTime, 
                 classId,
                 studentName: student?.name,
                 studentPhone: student?.phone
             };
+            
+            // Optimistic update
             setAttendance(prev => [...prev, newRecord]);
+            
             if (supabase) {
                 const { error } = await supabase.from('attendance').insert([{
                     attendance_id: newRecord.id,
                     student_id: newRecord.studentId,
                     attendance_date: newRecord.date,
                     class_info: newRecord.classTime,
+                    class_id: newRecord.classId,
                     name: newRecord.studentName || '',
                     phone: newRecord.studentPhone ? String(newRecord.studentPhone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
                 }]);
+                
                 if (error) {
                     alert("출석 저장 중 오류가 발생했습니다: " + error.message);
                     console.error(error);
+                    // Rollback or refetch
+                    fetchData();
+                } else {
+                    // Always refetch to ensure sync
+                    fetchData();
                 }
             }
         }
-    }, [attendance, supabase, students]);
+    }, [attendance, supabase, students, fetchData]);
 
     const addOrUpdateSchedule = useCallback(async (classData: ClassSchedule) => {
         setSchedule(prev => {

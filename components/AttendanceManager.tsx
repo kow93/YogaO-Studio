@@ -31,38 +31,9 @@ const getStartOfWeek = (date: dayjs.Dayjs) => {
 
 const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, targetDate: string) => {
     const toISODate = (d: any) => {
-        try {
-            if (!d) return '';
-            // Handle various formats and ensure it's treated as KST if it's just a date string
-            let dateObj;
-            if (typeof d === 'string') {
-                const cleanStr = d
-                    .replace(/년|월/g, '-')
-                    .replace(/일/g, '')
-                    .replace(/\./g, '-')
-                    .replace(/\//g, '-')
-                    .replace(/\s/g, ' ')
-                    .trim();
-                
-                // If it looks like YYYY-MM-DD, parse it in KST
-                if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
-                    dateObj = dayjs.tz(cleanStr, 'Asia/Seoul');
-                } else {
-                    dateObj = dayjs(cleanStr);
-                }
-            } else {
-                dateObj = dayjs(d);
-            }
-
-            if (dateObj.isValid()) {
-                // Always convert to KST before formatting to YYYY-MM-DD
-                return dateObj.tz('Asia/Seoul').format('YYYY-MM-DD');
-            }
-            return '';
-        } catch (e) {
-            console.error('Date parsing error:', e);
-            return '';
-        }
+        if (!d) return '';
+        const parsed = dayjs(d);
+        return parsed.isValid() ? parsed.format('YYYY-MM-DD') : '';
     };
 
     const rDate = toISODate((record as any).attendance_date || (record as any)['출석 날짜'] || record.date);
