@@ -32,6 +32,7 @@ const getStartOfWeek = (date: dayjs.Dayjs) => {
 const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, targetDate: string) => {
     const toISODate = (d: any) => {
         if (!d) return '';
+        // The Golden Rule: Always format to YYYY-MM-DD for comparison
         const parsed = dayjs(d);
         return parsed.isValid() ? parsed.format('YYYY-MM-DD') : '';
     };
@@ -41,23 +42,31 @@ const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, target
 
     if (!rDate || !tDate || rDate !== tDate) return false;
 
-    const rawDbInfo = String((record as any).class_info || (record as any)['수업 시간 정보'] || record.classTime || '');
-    const targetClassInfo = `${classItem.startTime} - ${classItem.className}`;
-    
-    // 1순위: 정확한 classId 매칭 (가장 확실함)
+    // 1순위: 정확한 classId 매칭
     if (record.classId && classItem.id && record.classId === classItem.id) return true;
 
-    // 2순위: 정확한 class_info 매칭
-    if (rawDbInfo === targetClassInfo) return true;
+    // 2순위: 고유 식별자 생성 비교 ([날짜]-[시간]-[수업이름])
+    const recordTimeMatch = String(record.classTime || '').match(/^(\d{2}:\d{2})/);
+    const recordTime = recordTimeMatch ? recordTimeMatch[1] : '';
+    const recordName = String(record.classTime || '').split(' - ')[1] || String(record.classTime || '');
+    const recordGeneratedId = record.classId || `${rDate}-${recordTime}-${recordName}`;
     
-    // 3순위: 과거 데이터 호환성 (공백 무시 부분 일치)
-    const dbInfoNoSpace = rawDbInfo.replace(/\s/g, '');
-    const targetName = (classItem.className || '').replace(/\s/g, '');
-    const targetTime = classItem.startTime || '';
+    const targetGeneratedId = classItem.id || `${tDate}-${classItem.startTime}-${classItem.className}`;
     
-    if (!targetName || !targetTime) return false;
+    if (recordGeneratedId === targetGeneratedId) return true;
+
+    // 3순위: 정규식을 사용한 시간 및 이름 분리 매칭 (과거 데이터 호환)
+    const rawDbInfo = String((record as any).class_info || (record as any)['수업 시간 정보'] || record.classTime || '');
+    const regex = /^(\d{2}:\d{2})\s*-\s*(.*)$/;
+    const match = rawDbInfo.match(regex);
     
-    return rawDbInfo.includes(targetTime) && dbInfoNoSpace.includes(targetName);
+    if (match) {
+        const dbTime = match[1];
+        const dbName = match[2].trim();
+        return dbTime === classItem.startTime && dbName === classItem.className;
+    }
+
+    return false;
 };
 
 export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
@@ -383,13 +392,18 @@ const ClassAttendanceModal: React.FC<{
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
             <div className="bg-white rounded-3xl p-8 shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
                 <div className="flex justify-between items-start mb-6">
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900">{classItem.className}</h2>
-                        <p className="text-sm text-gray-500 font-medium mt-1">
-                            {date.format('MM월 DD일 dddd')} • {classItem.startTime}
-                        </p>
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className="px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full border border-indigo-100">
+                                {classItem.startTime} 수업
+                            </span>
+                            <span className="text-xs text-gray-400 font-medium">
+                                {date.format('MM월 DD일 dddd')}
+                            </span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{classItem.className}</h2>
                     </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2"><CloseIcon className="w-6 h-6" /></button>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2 transition-colors"><CloseIcon className="w-6 h-6" /></button>
                 </div>
                 <div className="relative mb-6">
                     <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

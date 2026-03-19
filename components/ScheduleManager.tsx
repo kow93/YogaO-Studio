@@ -54,9 +54,9 @@ function parseCsvLine(line: string): string[] {
 }
 
 const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, targetDate: string) => {
-    // 1. Aggressive Date Normalization (YYYY-MM-DD)
     const toISODate = (d: any) => {
         if (!d) return '';
+        // The Golden Rule: Always format to YYYY-MM-DD for comparison
         const parsed = dayjs(d);
         return parsed.isValid() ? parsed.format('YYYY-MM-DD') : '';
     };
@@ -66,29 +66,31 @@ const isLooseMatch = (record: AttendanceRecord, classItem: ClassSchedule, target
 
     if (rDate !== tDate) return false;
 
-    // 2. ID Check (Priority)
+    // 1순위: 정확한 classId 매칭
     if (record.classId && classItem.id && record.classId === classItem.id) return true;
 
-    // 3. Keyword Match (Class Name Only)
-    // Remove all spaces to ensure "Yoga" matches " Yoga "
-    const dbInfo = (record.classTime || '').replace(/\s/g, '');
-    const targetName = (classItem.className || '').replace(/\s/g, '');
+    // 2순위: 고유 식별자 생성 비교 ([날짜]-[시간]-[수업이름])
+    const recordTimeMatch = String(record.classTime || '').match(/^(\d{2}:\d{2})/);
+    const recordTime = recordTimeMatch ? recordTimeMatch[1] : '';
+    const recordName = String(record.classTime || '').split(' - ')[1] || String(record.classTime || '');
+    const recordGeneratedId = record.classId || `${rDate}-${recordTime}-${recordName}`;
     
-    if (!targetName) return false;
+    const targetGeneratedId = classItem.id || `${tDate}-${classItem.startTime}-${classItem.className}`;
+    
+    if (recordGeneratedId === targetGeneratedId) return true;
 
-    const isMatch = dbInfo.includes(targetName);
-
-    // Debugging for same-date records
-    if (rDate === tDate) {
-         console.log(
-            `[Attendance Mapping] ${isMatch ? 'MATCH' : 'FAIL'} | ` +
-            `Date: ${rDate} | ` +
-            `DB Info: "${record.classTime}" | ` +
-            `Target Name: "${classItem.className}"`
-        );
+    // 3순위: 정규식을 사용한 시간 및 이름 분리 매칭 (과거 데이터 호환)
+    const rawDbInfo = String(record.classTime || '');
+    const regex = /^(\d{2}:\d{2})\s*-\s*(.*)$/;
+    const match = rawDbInfo.match(regex);
+    
+    if (match) {
+        const dbTime = match[1];
+        const dbName = match[2].trim();
+        return dbTime === classItem.startTime && dbName === classItem.className;
     }
 
-    return isMatch;
+    return false;
 };
 
 export const ScheduleManager: React.FC<ScheduleManagerProps> = (props) => {

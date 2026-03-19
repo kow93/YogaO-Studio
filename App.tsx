@@ -802,65 +802,73 @@ const App: React.FC = () => {
     const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string, existingRecordId?: string) => {
         const formattedDate = dayjs(date).format('YYYY-MM-DD');
         
+        // Generate fallback class_id if missing: [Date]-[Time]-[ClassName]
+        const timeMatch = classTime.match(/^(\d{2}:\d{2})/);
+        const timePart = timeMatch ? timeMatch[1] : '';
+        const namePart = classTime.split(' - ')[1] || classTime;
+        const effectiveClassId = classId || `${formattedDate}-${timePart}-${namePart}`;
+        
         const exists = existingRecordId ? attendance.find(a => a.id === existingRecordId) : attendance.find(a => {
             const aDate = dayjs(a.date).format('YYYY-MM-DD');
-            if (classId && a.classId) {
-                return a.studentId === studentId && aDate === formattedDate && a.classId === classId;
-            }
-            return a.studentId === studentId && aDate === formattedDate && a.classTime === classTime;
+            const aTimeMatch = (a.classTime || '').match(/^(\d{2}:\d{2})/);
+            const aTimePart = aTimeMatch ? aTimeMatch[1] : '';
+            const aNamePart = (a.classTime || '').split(' - ')[1] || a.classTime;
+            const aEffectiveClassId = a.classId || `${aDate}-${aTimePart}-${aNamePart}`;
+
+            return a.studentId === studentId && aDate === formattedDate && aEffectiveClassId === effectiveClassId;
         });
 
         if (exists) {
-            // Optimistic update
-            setAttendance(prev => prev.filter(a => a.id !== exists.id));
-            
             if (supabase) {
                 const { error } = await supabase.from('attendance').delete().eq('attendance_id', exists.id);
                 if (error) {
                     alert("출석 삭제 중 오류가 발생했습니다: " + error.message);
                     console.error(error);
-                    // Rollback or refetch
-                    fetchData();
-                } else {
-                    // Always refetch to ensure sync
-                    fetchData();
                 }
+                // Always refetch to ensure sync
+                await fetchData();
+            } else {
+                setAttendance(prev => prev.filter(a => a.id !== exists.id));
             }
         } else {
             const student = students.find(s => s.id === studentId);
-            const newRecord = { 
-                id: crypto.randomUUID(), 
-                studentId, 
-                date: formattedDate, 
-                classTime, 
-                classId,
-                studentName: student?.name,
-                studentPhone: student?.phone
-            };
+            const newId = crypto.randomUUID();
             
-            // Optimistic update
-            setAttendance(prev => [...prev, newRecord]);
+            console.log('[toggleAttendance] Saving to DB:', {
+                attendance_date: formattedDate,
+                class_id: effectiveClassId,
+                student_id: studentId,
+                student_name: student?.name
+            });
             
             if (supabase) {
                 const { error } = await supabase.from('attendance').insert([{
-                    attendance_id: newRecord.id,
-                    student_id: newRecord.studentId,
-                    attendance_date: newRecord.date,
-                    class_info: newRecord.classTime,
-                    class_id: newRecord.classId,
-                    name: newRecord.studentName || '',
-                    phone: newRecord.studentPhone ? String(newRecord.studentPhone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
+                    attendance_id: newId,
+                    student_id: studentId,
+                    attendance_date: formattedDate,
+                    class_info: classTime,
+                    class_id: effectiveClassId,
+                    name: student?.name || '',
+                    phone: student?.phone ? String(student?.phone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
                 }]);
                 
                 if (error) {
                     alert("출석 저장 중 오류가 발생했습니다: " + error.message);
                     console.error(error);
-                    // Rollback or refetch
-                    fetchData();
-                } else {
-                    // Always refetch to ensure sync
-                    fetchData();
                 }
+                // Always refetch to ensure sync
+                await fetchData();
+            } else {
+                const newRecord = { 
+                    id: newId, 
+                    studentId, 
+                    date: formattedDate, 
+                    classTime, 
+                    classId: effectiveClassId,
+                    studentName: student?.name,
+                    studentPhone: student?.phone
+                };
+                setAttendance(prev => [...prev, newRecord]);
             }
         }
     }, [attendance, supabase, students, fetchData]);
