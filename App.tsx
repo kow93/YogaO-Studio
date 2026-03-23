@@ -98,6 +98,7 @@ const App: React.FC = () => {
                 paymentDate: m.payment_date || m.paymentDate,
                 holdStartDate: m.hold_start_date || m.holdStartDate,
                 holdEndDate: m.hold_end_date || m.holdEndDate,
+                totalSessions: m.total_sessions || m.totalSessions,
                 paymentMethod: m.payment_method || m.paymentMethod,
                 cashReceiptIssued: m.cash_receipt_issued || m.cashReceiptIssued,
             }));

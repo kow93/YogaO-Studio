@@ -35,6 +35,7 @@ export interface Membership {
   paymentDate?: string; // ISO string
   holdStartDate?: string;
   holdEndDate?: string;
+  totalSessions?: number;
   paymentMethod: '카드' | '현금';
   cashReceiptIssued?: boolean;
   status?: 'Active' | 'Expired' | 'Upgraded' | 'Refunded';

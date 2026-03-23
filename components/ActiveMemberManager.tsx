@@ -208,45 +208,65 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         return d.isValid() ? d.format('YYYY-MM-DD') : '-';
     };
 
-    const calculateAttendanceRate = (studentId: string, passType?: PassType, registrationDate?: string) => {
-        if (!passType) return '-';
+    const calculateUsageStatus = (studentId: string, membership: Membership) => {
+        if (!membership || !membership.totalSessions) return { text: '-', isExceeded: false };
         
-        const today = dayjs();
-        const dayOfWeek = today.day() === 0 ? 7 : today.day();
-        const startOfThisWeek = today.subtract(dayOfWeek - 1, 'day').startOf('day');
-        const startOfLastTwoWeeks = startOfThisWeek.subtract(14, 'day');
-        
-        if (registrationDate && dayjs(registrationDate).isAfter(startOfLastTwoWeeks)) {
-            return '데이터 확보중';
-        }
-
-        // Count attendance in last 2 weeks (excluding this week)
-        const attendanceCount = attendance.filter(a => 
+        const usedCount = attendance.filter(a => 
             a.studentId === studentId && 
-            dayjs(a.date).isAfter(startOfLastTwoWeeks.subtract(1, 'day')) && 
-            dayjs(a.date).isBefore(startOfThisWeek)
+            dayjs(a.date).isAfter(dayjs(membership.startDate).subtract(1, 'day')) && 
+            dayjs(a.date).isBefore(dayjs(membership.endDate).add(1, 'day'))
         ).length;
 
-        // Calculate expected attendance based on pass type frequency
-        let weeklyFrequency = 0;
-        if (passType.includes('주 2회')) weeklyFrequency = 2;
-        else if (passType.includes('주 3회')) weeklyFrequency = 3;
-        else if (passType.includes('주 5회')) weeklyFrequency = 5;
+        const total = membership.totalSessions;
+        const remaining = total - usedCount;
         
-        // If frequency is 0 (e.g. One Day, 1 Week, or unknown), just show count
-        if (weeklyFrequency === 0) {
-            return `${attendanceCount}회 (지난 2주)`;
+        if (remaining < 0) {
+            return { text: `${usedCount} / ${total} (초과)`, isExceeded: true };
         }
-
-        const expected = 2 * weeklyFrequency;
-        const rate = Math.min(100, Math.round((attendanceCount / expected) * 100));
-
-        return `${rate}% (${attendanceCount}/${expected})`;
+        return { text: `${usedCount} / ${total} (잔여: ${remaining}회)`, isExceeded: false };
     };
 
     const handleMemoSave = (studentId: string, newMemo: string) => {
         updateStudent(studentId, { memo: newMemo });
     };
+
+    const MemberRow = React.memo(({ member }: { member: Student & { membership: Membership } }) => (
+        <tr className="hover:bg-gray-50/50 transition-colors">
+            <td className="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => openEditModal(member)}>
+                <div className="font-bold text-indigo-600 hover:underline">{member.name}</div>
+                <div className="text-xs text-gray-500">{member.phone}</div>
+            </td>
+            <td className="px-6 py-4">
+                <div className="text-sm font-medium text-gray-700">{member.membership?.passType || '없음'}</div>
+                {member.membership?.holdStartDate && member.membership?.holdEndDate && (
+                    <div className="text-xs font-bold text-amber-500 mt-1">
+                        (홀딩기간 {dayjs(member.membership.holdStartDate).format('YY/MM/DD')} ~ {dayjs(member.membership.holdEndDate).format('YY/MM/DD')})
+                    </div>
+                )}
+            </td>
+            <td className="px-6 py-4">
+                <div className="text-sm text-gray-600">
+                    {member.membership ? formatDate(member.membership.endDate) : '-'}
+                </div>
+            </td>
+            <td className="px-6 py-4">
+                {(() => {
+                    const { text, isExceeded } = calculateUsageStatus(member.id, member.membership);
+                    return (
+                        <div className={`text-sm font-bold ${isExceeded ? 'text-red-600' : 'text-indigo-600'}`}>
+                            {text}
+                        </div>
+                    );
+                })()}
+            </td>
+            <td className="px-6 py-4">
+                <MemoInput 
+                    value={member.memo || ''} 
+                    onSave={(val) => handleMemoSave(member.id, val)}
+                />
+            </td>
+        </tr>
+    ));
 
     return (
         <div className="space-y-6">
@@ -284,42 +304,13 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">회원 정보</th>
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">이용권 정보</th>
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">만료일</th>
-                                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">지난 2주 출석률</th>
+                                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">이용 현황 (잔여/총)</th>
                                 <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-wider">비고 (Memo)</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                             {filteredMembers.map(member => (
-                                <tr key={member.id} className="hover:bg-gray-50/50 transition-colors">
-                                    <td className="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => openEditModal(member)}>
-                                        <div className="font-bold text-indigo-600 hover:underline">{member.name}</div>
-                                        <div className="text-xs text-gray-500">{member.phone}</div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="text-sm font-medium text-gray-700">{member.membership?.passType || '없음'}</div>
-                                        {member.membership?.holdStartDate && member.membership?.holdEndDate && (
-                                            <div className="text-xs font-bold text-amber-500 mt-1">
-                                                (홀딩기간 {dayjs(member.membership.holdStartDate).format('YY/MM/DD')} ~ {dayjs(member.membership.holdEndDate).format('YY/MM/DD')})
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="text-sm text-gray-600">
-                                            {member.membership ? formatDate(member.membership.endDate) : '-'}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="text-sm font-bold text-indigo-600">
-                                            {calculateAttendanceRate(member.id, member.membership?.passType, member.registrationDate)}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <MemoInput 
-                                            value={member.memo || ''} 
-                                            onSave={(val) => handleMemoSave(member.id, val)}
-                                        />
-                                    </td>
-                                </tr>
+                                <MemberRow key={member.id} member={member} />
                             ))}
                         </tbody>
                     </table>

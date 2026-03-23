@@ -26,29 +26,18 @@ const StudentAttendanceItem: React.FC<{
     updateStudent?: (studentId: string, updates: Partial<Student>) => void;
 }> = React.memo(({ student, record, dateString, classTimeString, classId, toggleAttendance, isSubmitting, updateStudent }) => {
     return (
-        <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors space-y-3">
-            <div className="flex justify-between items-center">
-                <div>
-                    <p className="font-bold text-gray-900">{student.name}</p>
-                    <p className="text-[10px] text-gray-400 font-medium">{student.phone}</p>
-                </div>
-                <input 
-                    type="checkbox" 
-                    checked={!!record} 
-                    disabled={isSubmitting}
-                    onChange={() => toggleAttendance && toggleAttendance(student.id, dateString, classTimeString, classId)} 
-                    className={`h-6 w-6 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                />
-            </div>
+        <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors flex justify-between items-center">
             <div>
-                <textarea
-                    placeholder="특이사항 입력..."
-                    value={student.notes || ''}
-                    onChange={(e) => updateStudent && updateStudent(student.id, { notes: e.target.value })}
-                    className="w-full text-[11px] p-2 bg-white border border-gray-100 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
-                    rows={1}
-                />
+                <p className="font-bold text-gray-900">{student.name}</p>
+                <p className="text-[10px] text-gray-400 font-medium">{student.phone}</p>
             </div>
+            <input 
+                type="checkbox" 
+                checked={!!record} 
+                disabled={isSubmitting}
+                onChange={() => toggleAttendance && toggleAttendance(student.id, dateString, classTimeString, classId)} 
+                className={`h-7 w-7 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            />
         </div>
     );
 });
