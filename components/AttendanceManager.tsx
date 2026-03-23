@@ -18,6 +18,7 @@ interface AttendanceManagerProps {
     memberships?: Membership[];
     schedule?: ClassSchedule[];
     toggleAttendance?: (studentId: string, date: string, classTime: string, classId?: string) => void;
+    isSubmittingAttendance?: boolean;
     addOrUpdateSchedule?: (classData: ClassSchedule) => void;
     deleteSchedule?: (classId: string) => void;
     updateStudent?: (studentId: string, updates: Partial<Student>) => void;
@@ -286,6 +287,7 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
                     memberships={memberships}
                     attendance={attendance}
                     toggleAttendance={toggleAttendance}
+                    isSubmitting={props.isSubmittingAttendance}
                     updateStudent={props.updateStudent}
                     classInfo={modalInfo.data}
                 />

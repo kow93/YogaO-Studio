@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule, Transaction } from './types';
+import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule, Transaction, AttendanceFormatted } from './types';
 import { PASS_PRICES, PASS_DURATIONS, DEFAULT_SCHEDULE, calculateEndDate } from './constants';
 import { Dashboard } from './components/Dashboard';
 import { AttendanceManager } from './components/AttendanceManager';
@@ -48,9 +48,11 @@ const App: React.FC = () => {
     const [students, setStudents] = useState<Student[]>([]);
     const [memberships, setMemberships] = useState<Membership[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+    const [attendanceFormatted, setAttendanceFormatted] = useState<AttendanceFormatted[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [schedule, setSchedule] = useState<ClassSchedule[]>(DEFAULT_SCHEDULE);
+    const [isSubmittingAttendance, setIsSubmittingAttendance] = useState(false);
 
     const supabase = (window as any)._supabase;
 
@@ -60,6 +62,7 @@ const App: React.FC = () => {
             { data: studentsData, error: studentError },
             { data: membershipsData, error: membershipError },
             { data: attendanceData, error: attendanceError },
+            { data: attendanceFormattedData, error: attendanceFormattedError },
             { data: expensesData, error: expenseError },
             { data: transactionsData, error: transactionError },
             { data: classesData, error: classError }
@@ -67,6 +70,7 @@ const App: React.FC = () => {
             supabase.from('student').select('*'),
             supabase.from('membership').select('*'),
             supabase.from('attendance').select('*'),
+            supabase.from('attendance_formatted').select('*'),
             supabase.from('expense').select('*'),
             supabase.from('transaction_history').select('*'),
             supabase.from('classes').select('*')
@@ -110,6 +114,9 @@ const App: React.FC = () => {
                 classTime: a.class_info || a['수업 시간 정보'] || a.classTime,
             }));
             setAttendance(mapped);
+        }
+        if (attendanceFormattedData) {
+            setAttendanceFormatted(attendanceFormattedData);
         }
         if (expensesData) {
             const mappedExpenses = expensesData.map((e: any) => ({
@@ -197,7 +204,8 @@ const App: React.FC = () => {
             date: newMembership.paymentDate || registrationDate,
             description: `신규 멤버십: ${newMembership.passType}`,
             studentId: studentId,
-            membershipId: newMembership.id
+            membershipId: newMembership.id,
+            registrationType: 'New'
         };
 
         setStudents(prev => [...prev, newStudent]);
@@ -247,7 +255,8 @@ const App: React.FC = () => {
                 date: newTransaction.date,
                 description: newTransaction.description,
                 student_id: newTransaction.studentId,
-                membership_id: newTransaction.membershipId
+                membership_id: newTransaction.membershipId,
+                registration_type: newTransaction.registrationType
             }]);
         }
     }, [supabase, students]);
@@ -269,6 +278,7 @@ const App: React.FC = () => {
         let price = customPrice !== undefined ? parseAmount(customPrice) : PASS_PRICES[passType];
         
         const studentMemberships = memberships.filter(m => m.studentId === studentId);
+        const hasPreviousMembership = studentMemberships.length > 0;
         const lastMembership = studentMemberships.sort((a, b) => dayjs(b.endDate).valueOf() - dayjs(a.endDate).valueOf())[0];
 
         if (customPrice === undefined) {
@@ -301,9 +311,10 @@ const App: React.FC = () => {
             category: '멤버십',
             amount: newMembership.price,
             date: newMembership.paymentDate || newMembership.startDate,
-            description: `재등록 멤버십: ${newMembership.passType}`,
+            description: `${hasPreviousMembership ? '재등록' : '신규'} 멤버십: ${newMembership.passType}`,
             studentId: studentId,
-            membershipId: newMembership.id
+            membershipId: newMembership.id,
+            registrationType: hasPreviousMembership ? 'Renewal' : 'New'
         };
 
         setMemberships(prev => [...prev, newMembership]);
@@ -340,7 +351,8 @@ const App: React.FC = () => {
                 date: newTransaction.date,
                 description: newTransaction.description,
                 student_id: newTransaction.studentId,
-                membership_id: newTransaction.membershipId
+                membership_id: newTransaction.membershipId,
+                registration_type: newTransaction.registrationType
             }]);
         }
     }, [memberships, supabase, students]);
@@ -395,7 +407,8 @@ const App: React.FC = () => {
             date: paymentDateStr,
             description: `${original.passType} -> ${newPassType} 업그레이드`,
             studentId: original.studentId,
-            membershipId: newMembership.id
+            membershipId: newMembership.id,
+            registrationType: 'Renewal'
         };
 
         setMemberships(prev => prev.map(m => m.id === originalMembershipId ? updatedOriginal : m).concat(newMembership));
@@ -433,7 +446,8 @@ const App: React.FC = () => {
                 date: newTransaction.date,
                 description: newTransaction.description,
                 student_id: newTransaction.studentId,
-                membership_id: newTransaction.membershipId
+                membership_id: newTransaction.membershipId,
+                registration_type: newTransaction.registrationType
             }]);
         }
     }, [memberships, students, supabase]);
@@ -800,62 +814,85 @@ const App: React.FC = () => {
    }, [supabase]);
 
     const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string) => {
-        console.log('클릭됨', studentId, date);
-        const formattedDate = dayjs(date).format('YYYY-MM-DD');
-        
-        // Find existing record using strict 1:1 comparison
-        const exists = attendance.find(a => {
-            const aDate = dayjs(a.date).format('YYYY-MM-DD');
-            return a.studentId === studentId && aDate === formattedDate && a.classId === classId;
-        });
+        if (isSubmittingAttendance) return;
+        setIsSubmittingAttendance(true);
 
-        if (exists) {
+        try {
+            const formattedDate = dayjs(date).format('YYYY-MM-DD');
+            const targetClassId = classId || '';
+
             if (supabase) {
-                const { error } = await supabase.from('attendance').delete().eq('attendance_id', exists.id);
-                if (error) {
-                    alert("출석 삭제 중 오류가 발생했습니다: " + error.message);
-                    console.error(error);
+                // 1. Check if record exists for toggle logic
+                const { data: existing, error: checkError } = await supabase
+                    .from('attendance')
+                    .select('attendance_id')
+                    .eq('student_id', studentId)
+                    .eq('attendance_date', formattedDate)
+                    .eq('class_id', targetClassId)
+                    .maybeSingle();
+
+                if (checkError) throw checkError;
+
+                if (existing) {
+                    // Toggle off: Delete
+                    const { error: deleteError } = await supabase
+                        .from('attendance')
+                        .delete()
+                        .eq('attendance_id', existing.attendance_id);
+                    
+                    if (deleteError) throw deleteError;
+                } else {
+                    // Toggle on: Upsert with unique constraint check
+                    const student = students.find(s => s.id === studentId);
+                    const { error: upsertError } = await supabase
+                        .from('attendance')
+                        .upsert([{
+                            student_id: studentId,
+                            attendance_date: formattedDate,
+                            class_info: classTime,
+                            class_id: targetClassId,
+                            name: student?.name || '',
+                            phone: student?.phone ? String(student?.phone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
+                        }], { 
+                            onConflict: 'student_id,attendance_date,class_id' 
+                        });
+
+                    if (upsertError) throw upsertError;
                 }
-                // Force state update by refetching
                 await fetchData();
             } else {
-                setAttendance(prev => prev.filter(a => a.id !== exists.id));
-            }
-        } else {
-            const student = students.find(s => s.id === studentId);
-            const newId = crypto.randomUUID();
-            
-            if (supabase) {
-                const { error } = await supabase.from('attendance').insert([{
-                    attendance_id: newId,
-                    student_id: studentId,
-                    attendance_date: formattedDate,
-                    class_info: classTime,
-                    class_id: classId,
-                    name: student?.name || '',
-                    phone: student?.phone ? String(student?.phone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
-                }]);
-                
-                if (error) {
-                    alert("출석 저장 중 오류가 발생했습니다: " + error.message);
-                    console.error(error);
+                // Local state fallback
+                const localExists = attendance.find(a => {
+                    const aDate = dayjs(a.date).format('YYYY-MM-DD');
+                    return a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
+                });
+
+                if (localExists) {
+                    setAttendance(prev => prev.filter(a => a.id !== localExists.id));
+                } else {
+                    const student = students.find(s => s.id === studentId);
+                    const newRecord = { 
+                        id: crypto.randomUUID(), 
+                        studentId, 
+                        date: formattedDate, 
+                        classTime, 
+                        classId: targetClassId,
+                        studentName: student?.name,
+                        studentPhone: student?.phone
+                    };
+                    setAttendance(prev => [...prev, newRecord]);
                 }
-                // Force state update by refetching
-                await fetchData();
-            } else {
-                const newRecord = { 
-                    id: newId, 
-                    studentId, 
-                    date: formattedDate, 
-                    classTime, 
-                    classId,
-                    studentName: student?.name,
-                    studentPhone: student?.phone
-                };
-                setAttendance(prev => [...prev, newRecord]);
             }
+        } catch (error: any) {
+            alert("출석 처리 중 오류가 발생했습니다: " + error.message);
+            console.error(error);
+        } finally {
+            // Debounce: 500ms
+            setTimeout(() => {
+                setIsSubmittingAttendance(false);
+            }, 500);
         }
-    }, [attendance, supabase, students, fetchData]);
+    }, [isSubmittingAttendance, supabase, students, attendance, fetchData]);
 
     const addOrUpdateSchedule = useCallback(async (classData: ClassSchedule) => {
         setSchedule(prev => {
@@ -1048,7 +1085,7 @@ const App: React.FC = () => {
     const renderContent = () => {
         switch (view) {
             case 'dashboard':
-                return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} schedule={schedule} />;
+                return <Dashboard students={students} memberships={memberships} expenses={expenses} attendance={attendance} attendanceFormatted={attendanceFormatted} schedule={schedule} refreshData={fetchData} transactions={transactions} />;
             case 'active_members':
                 return <ActiveMemberManager 
                     students={students} 
@@ -1073,6 +1110,7 @@ const App: React.FC = () => {
                     attendance={attendance} 
                     schedule={schedule}
                     toggleAttendance={toggleAttendance}
+                    isSubmittingAttendance={isSubmittingAttendance}
                     addOrUpdateSchedule={addOrUpdateSchedule}
                     deleteSchedule={deleteSchedule}
                     updateStudent={updateStudent}
@@ -1080,7 +1118,7 @@ const App: React.FC = () => {
             case 'expenses':
                 return <ExpenseManager expenses={expenses} addExpense={addExpense} deleteExpense={deleteExpense} importExpenses={importExpenses} />;
             case 'financial_report':
-                return <FinancialReport transactions={transactions} students={students} />;
+                return <FinancialReport transactions={transactions} students={students} memberships={memberships} expenses={expenses} />;
             default:
                 return <div>Unknown View</div>;
         }

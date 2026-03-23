@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { Transaction, Student } from '../types';
+import React, { useMemo, useState, useCallback } from 'react';
+import { Transaction, Student, Membership, Expense } from '../types';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
-import { TrendingUp, TrendingDown, Wallet, Calendar, ChevronLeft, ChevronRight, PieChart as PieChartIcon, Printer, Download, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { TrendingUp, TrendingDown, Wallet, Calendar, ChevronLeft, ChevronRight, PieChart as PieChartIcon, Printer, Download, ArrowUpRight, ArrowDownRight, BarChart3 } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -12,47 +12,77 @@ dayjs.extend(timezone);
 interface FinancialReportProps {
     transactions: Transaction[];
     students: Student[];
+    memberships: Membership[];
+    expenses: Expense[];
 }
 
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
 
-export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, students }) => {
+const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('ko-KR').format(amount) + '원';
+};
+
+export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, students, memberships, expenses }) => {
     const now = dayjs().tz('Asia/Seoul');
     const [selectedYear, setSelectedYear] = useState(now.year());
     const [selectedMonth, setSelectedMonth] = useState(now.month() + 1); // 1-12
 
-    const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => {
-            const tDate = dayjs(t.date).tz('Asia/Seoul');
-            return tDate.year() === selectedYear && (tDate.month() + 1) === selectedMonth;
-        });
-    }, [transactions, selectedYear, selectedMonth]);
+    const selectedDate = useMemo(() => dayjs().tz('Asia/Seoul').year(selectedYear).month(selectedMonth - 1), [selectedYear, selectedMonth]);
 
-    const prevMonthTransactions = useMemo(() => {
+    // Income from memberships based on payment_date
+    const filteredIncome = useMemo(() => {
+        return memberships.filter(m => {
+            if (!m.paymentDate) return false;
+            const pDate = dayjs(m.paymentDate).tz('Asia/Seoul');
+            return pDate.year() === selectedYear && (pDate.month() + 1) === selectedMonth;
+        }).map(m => {
+            // Determine New vs Renewal
+            const prevPayments = memberships.filter(prev => 
+                prev.studentId === m.studentId && 
+                prev.id !== m.id &&
+                prev.paymentDate && 
+                dayjs(prev.paymentDate).tz('Asia/Seoul').isBefore(dayjs(m.paymentDate).tz('Asia/Seoul'))
+            );
+            return {
+                ...m,
+                registrationType: prevPayments.length > 0 ? 'Renewal' : 'New'
+            };
+        });
+    }, [memberships, selectedYear, selectedMonth]);
+
+    // Expenses from expenses table
+    const filteredExpenses = useMemo(() => {
+        return expenses.filter(e => {
+            const eDate = dayjs(e.date).tz('Asia/Seoul');
+            return eDate.year() === selectedYear && (eDate.month() + 1) === selectedMonth;
+        });
+    }, [expenses, selectedYear, selectedMonth]);
+
+    const prevMonthIncome = useMemo(() => {
         const prevMonth = selectedMonth === 1 ? 12 : selectedMonth - 1;
         const prevYear = selectedMonth === 1 ? selectedYear - 1 : selectedYear;
-        return transactions.filter(t => {
-            const tDate = dayjs(t.date).tz('Asia/Seoul');
-            return tDate.year() === prevYear && (tDate.month() + 1) === prevMonth;
+        return memberships.filter(m => {
+            if (!m.paymentDate) return false;
+            const pDate = dayjs(m.paymentDate).tz('Asia/Seoul');
+            return pDate.year() === prevYear && (pDate.month() + 1) === prevMonth;
         });
-    }, [transactions, selectedYear, selectedMonth]);
+    }, [memberships, selectedYear, selectedMonth]);
+
+    const prevMonthExpenses = useMemo(() => {
+        const prevMonth = selectedMonth === 1 ? 12 : selectedMonth - 1;
+        const prevYear = selectedMonth === 1 ? selectedYear - 1 : selectedYear;
+        return expenses.filter(e => {
+            const eDate = dayjs(e.date).tz('Asia/Seoul');
+            return eDate.year() === prevYear && (eDate.month() + 1) === prevMonth;
+        });
+    }, [expenses, selectedYear, selectedMonth]);
 
     const stats = useMemo(() => {
-        const income = filteredTransactions
-            .filter(t => t.type === 'Income')
-            .reduce((sum, t) => sum + t.amount, 0);
-            
-        const expense = filteredTransactions
-            .filter(t => t.type === 'Expense')
-            .reduce((sum, t) => sum + t.amount, 0);
+        const income = filteredIncome.reduce((sum, m) => sum + (m.price || 0) - (m.refundAmount || 0), 0);
+        const expense = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-        const prevIncome = prevMonthTransactions
-            .filter(t => t.type === 'Income')
-            .reduce((sum, t) => sum + t.amount, 0);
-        
-        const prevExpense = prevMonthTransactions
-            .filter(t => t.type === 'Expense')
-            .reduce((sum, t) => sum + t.amount, 0);
+        const prevIncome = prevMonthIncome.reduce((sum, m) => sum + (m.price || 0) - (m.refundAmount || 0), 0);
+        const prevExpense = prevMonthExpenses.reduce((sum, e) => sum + e.amount, 0);
 
         const incomeDiff = prevIncome === 0 ? 0 : ((income - prevIncome) / prevIncome) * 100;
         const expenseDiff = prevExpense === 0 ? 0 : ((expense - prevExpense) / prevExpense) * 100;
@@ -64,20 +94,83 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
             incomeDiff,
             expenseDiff
         };
-    }, [filteredTransactions, prevMonthTransactions]);
+    }, [filteredIncome, filteredExpenses, prevMonthIncome, prevMonthExpenses]);
+
+    // Daily Breakdown for the selected month
+    const dailyBreakdownData = useMemo(() => {
+        const daysInMonth = selectedDate.daysInMonth();
+        const data = [];
+        for (let i = 1; i <= daysInMonth; i++) {
+            const dayIncome = filteredIncome.filter(m => dayjs(m.paymentDate).tz('Asia/Seoul').date() === i)
+                .reduce((sum, m) => sum + (m.price || 0) - (m.refundAmount || 0), 0);
+            const dayExpense = filteredExpenses.filter(e => dayjs(e.date).tz('Asia/Seoul').date() === i)
+                .reduce((sum, e) => sum + e.amount, 0);
+            data.push({
+                name: `${i}일`,
+                매출: dayIncome,
+                지출: dayExpense
+            });
+        }
+        return data;
+    }, [filteredIncome, filteredExpenses, selectedDate]);
+
+    // New vs Renewal Pie Chart
+    const registrationTypeData = useMemo(() => {
+        const counts = { New: 0, Renewal: 0 };
+        filteredIncome.forEach(m => {
+            counts[m.registrationType as 'New' | 'Renewal'] += 1;
+        });
+        return [
+            { name: '신규 (New)', value: counts.New },
+            { name: '재등록 (Renewal)', value: counts.Renewal }
+        ].filter(d => d.value > 0);
+    }, [filteredIncome]);
+
+    // Last 6 months trend
+    const getMonthMetrics = useCallback((month: number, year: number) => {
+        const monthIncome = memberships.filter(m => {
+            if (!m.paymentDate) return false;
+            const d = dayjs(m.paymentDate).tz('Asia/Seoul');
+            return d.month() === month && d.year() === year;
+        }).reduce((acc, m) => acc + (m.price || 0) - (m.refundAmount || 0), 0);
+
+        const monthExpense = expenses.filter(e => {
+            const d = dayjs(e.date).tz('Asia/Seoul');
+            return d.month() === month && d.year() === year;
+        }).reduce((acc, e) => acc + e.amount, 0);
+        
+        return { revenue: monthIncome, expense: monthExpense, profit: monthIncome - monthExpense };
+    }, [memberships, expenses]);
+
+    const trendData = useMemo(() => {
+        const data = [];
+        for (let i = 5; i >= 0; i--) {
+            const d = selectedDate.subtract(i, 'month');
+            const m = d.month();
+            const y = d.year();
+            const metrics = getMonthMetrics(m, y);
+            data.push({
+                name: `${m + 1}월`,
+                매출: metrics.revenue,
+                지출: metrics.expense,
+                순수익: metrics.profit
+            });
+        }
+        return data;
+    }, [getMonthMetrics, selectedDate]);
 
     const categoryBreakdown = useMemo(() => {
         const breakdown: Record<string, { income: number; expense: number }> = {};
         
-        filteredTransactions.forEach(t => {
-            if (!breakdown[t.category]) {
-                breakdown[t.category] = { income: 0, expense: 0 };
-            }
-            if (t.type === 'Income') {
-                breakdown[t.category].income += t.amount;
-            } else {
-                breakdown[t.category].expense += t.amount;
-            }
+        filteredIncome.forEach(m => {
+            const cat = '멤버십';
+            if (!breakdown[cat]) breakdown[cat] = { income: 0, expense: 0 };
+            breakdown[cat].income += (m.price || 0) - (m.refundAmount || 0);
+        });
+
+        filteredExpenses.forEach(e => {
+            if (!breakdown[e.category]) breakdown[e.category] = { income: 0, expense: 0 };
+            breakdown[e.category].expense += e.amount;
         });
 
         return Object.entries(breakdown)
@@ -87,18 +180,33 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                 total: values.income + values.expense
             }))
             .sort((a, b) => b.total - a.total);
-    }, [filteredTransactions]);
-
-    const chartData = useMemo(() => {
-        return categoryBreakdown.map(cat => ({
-            name: cat.name,
-            value: cat.total
-        }));
-    }, [categoryBreakdown]);
+    }, [filteredIncome, filteredExpenses]);
 
     const sortedTransactions = useMemo(() => {
-        return [...filteredTransactions].sort((a, b) => dayjs(b.date).diff(dayjs(a.date)));
-    }, [filteredTransactions]);
+        const incomeItems = filteredIncome.map(m => ({
+            id: m.id,
+            date: m.paymentDate!,
+            type: 'Income' as const,
+            category: '멤버십',
+            amount: (m.price || 0) - (m.refundAmount || 0),
+            studentId: m.studentId,
+            description: `${m.passType} 결제`,
+            registrationType: m.registrationType
+        }));
+
+        const expenseItems = filteredExpenses.map(e => ({
+            id: e.id,
+            date: e.date,
+            type: 'Expense' as const,
+            category: e.category,
+            amount: e.amount,
+            studentId: undefined,
+            description: e.description,
+            registrationType: undefined
+        }));
+
+        return [...incomeItems, ...expenseItems].sort((a, b) => dayjs(b.date).diff(dayjs(a.date)));
+    }, [filteredIncome, filteredExpenses]);
 
     const getStudentName = (studentId?: string) => {
         if (!studentId) return '-';
@@ -156,21 +264,21 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
     };
 
     const yearlyStats = useMemo(() => {
-        const yearTransactions = transactions.filter(t => dayjs(t.date).tz('Asia/Seoul').year() === selectedYear);
-        const income = yearTransactions
-            .filter(t => t.type === 'Income')
-            .reduce((sum, t) => sum + t.amount, 0);
-        const expense = yearTransactions
-            .filter(t => t.type === 'Expense')
-            .reduce((sum, t) => sum + t.amount, 0);
+        const yearIncome = memberships.filter(m => {
+            if (!m.paymentDate) return false;
+            return dayjs(m.paymentDate).tz('Asia/Seoul').year() === selectedYear;
+        }).reduce((sum, m) => sum + (m.price || 0) - (m.refundAmount || 0), 0);
+
+        const yearExpense = expenses.filter(e => {
+            return dayjs(e.date).tz('Asia/Seoul').year() === selectedYear;
+        }).reduce((sum, e) => sum + e.amount, 0);
         
         return {
-            income,
-            expense,
-            profit: income - expense,
-            count: yearTransactions.length
+            income: yearIncome,
+            expense: yearExpense,
+            profit: yearIncome - yearExpense
         };
-    }, [transactions, selectedYear]);
+    }, [memberships, expenses, selectedYear]);
 
     return (
         <div className="p-6 space-y-8 bg-[#F8F9FA] min-h-screen print:bg-white print:p-0">
@@ -293,6 +401,97 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                 </div>
             </div>
 
+            {/* Financial Trend Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* 6 Months Trend */}
+                <div className="bg-white p-8 rounded-3xl shadow-sm border border-[#E5E7EB]">
+                    <div className="flex justify-between items-center mb-8">
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <span className="w-1.5 h-6 bg-indigo-600 rounded-full"></span>
+                            최근 6개월 재무 흐름
+                        </h3>
+                        <div className="flex gap-4 text-[10px] font-bold">
+                            <div className="flex items-center gap-1.5 text-indigo-600">
+                                <span className="w-2.5 h-2.5 bg-indigo-600 rounded-full"></span> 매출
+                            </div>
+                            <div className="flex items-center gap-1.5 text-rose-500">
+                                <span className="w-2.5 h-2.5 bg-rose-500 rounded-full"></span> 지출
+                            </div>
+                        </div>
+                    </div>
+                    <div className="h-[350px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                <XAxis 
+                                    dataKey="name" 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fontSize: 12, fill: '#9ca3af', fontWeight: 500 }}
+                                    dy={10}
+                                />
+                                <YAxis 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
+                                    tickFormatter={(val) => `${val / 10000}만`}
+                                />
+                                <Tooltip 
+                                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                    formatter={(val: number) => formatCurrency(val)}
+                                />
+                                <Line type="monotone" dataKey="매출" stroke="#6366f1" strokeWidth={4} dot={{ r: 6, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+                                <Line type="monotone" dataKey="지출" stroke="#ef4444" strokeWidth={4} dot={{ r: 6, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Daily Breakdown */}
+                <div className="bg-white p-8 rounded-3xl shadow-sm border border-[#E5E7EB]">
+                    <div className="flex justify-between items-center mb-8">
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>
+                            {selectedMonth}월 일간 매출 현황
+                        </h3>
+                        <div className="flex gap-4 text-[10px] font-bold">
+                            <div className="flex items-center gap-1.5 text-emerald-500">
+                                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span> 매출
+                            </div>
+                            <div className="flex items-center gap-1.5 text-rose-500">
+                                <span className="w-2.5 h-2.5 bg-rose-500 rounded-full"></span> 지출
+                            </div>
+                        </div>
+                    </div>
+                    <div className="h-[350px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={dailyBreakdownData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                <XAxis 
+                                    dataKey="name" 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
+                                    dy={10}
+                                />
+                                <YAxis 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
+                                    tickFormatter={(val) => `${val / 10000}만`}
+                                />
+                                <Tooltip 
+                                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                    formatter={(val: number) => formatCurrency(val)}
+                                />
+                                <Bar dataKey="매출" fill="#10B981" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="지출" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Category Breakdown */}
                 <div className="lg:col-span-1 space-y-6">
@@ -310,7 +509,7 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                                     <ResponsiveContainer width="100%" height="100%">
                                         <PieChart>
                                             <Pie
-                                                data={chartData}
+                                                data={categoryBreakdown.map(cat => ({ name: cat.name, value: cat.total }))}
                                                 cx="50%"
                                                 cy="50%"
                                                 innerRadius={60}
@@ -318,7 +517,7 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                                                 paddingAngle={5}
                                                 dataKey="value"
                                             >
-                                                {chartData.map((entry, index) => (
+                                                {categoryBreakdown.map((entry, index) => (
                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                                 ))}
                                             </Pie>
@@ -375,6 +574,43 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                         )}
                     </div>
 
+                    {/* New vs Renewal Pie Chart */}
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-[#E5E7EB]">
+                        <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                            <BarChart3 className="w-5 h-5 text-amber-500" />
+                            신규 vs 재등록 비중
+                        </h2>
+                        {registrationTypeData.length > 0 ? (
+                            <div className="h-[200px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={registrationTypeData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={50}
+                                            outerRadius={70}
+                                            paddingAngle={5}
+                                            dataKey="value"
+                                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                        >
+                                            <Cell fill="#6366F1" />
+                                            <Cell fill="#F59E0B" />
+                                        </Pie>
+                                        <Tooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        ) : (
+                            <div className="py-8 text-center text-gray-400 text-xs italic">
+                                이번 달 멤버십 결제 데이터가 없습니다.
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Transaction History */}
+                <div className="lg:col-span-2 space-y-6">
                     {/* Yearly Overview */}
                     <div className="bg-indigo-600 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden print:bg-white print:text-gray-900 print:border print:border-gray-300 print:shadow-none">
                         <div className="absolute top-0 right-0 p-4 opacity-20 print:hidden">
@@ -384,31 +620,27 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                             <TrendingUp className="w-5 h-5" />
                             {selectedYear}년 누적 현황
                         </h2>
-                        <div className="space-y-4 relative z-10">
-                            <div className="flex justify-between items-end">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+                            <div className="space-y-1">
                                 <span className="text-xs opacity-80">총 매출</span>
-                                <span className="text-xl font-black">{yearlyStats.income.toLocaleString()}원</span>
+                                <p className="text-2xl font-black">{yearlyStats.income.toLocaleString()}원</p>
                             </div>
-                            <div className="flex justify-between items-end">
+                            <div className="space-y-1">
                                 <span className="text-xs opacity-80">총 지출</span>
-                                <span className="text-xl font-black">{yearlyStats.expense.toLocaleString()}원</span>
+                                <p className="text-2xl font-black">{yearlyStats.expense.toLocaleString()}원</p>
                             </div>
-                            <div className="pt-4 border-t border-white/20 flex justify-between items-end">
-                                <span className="text-sm font-bold">누적 순수익</span>
-                                <span className="text-2xl font-black">{yearlyStats.profit.toLocaleString()}원</span>
+                            <div className="space-y-1">
+                                <span className="text-xs opacity-80">누적 순수익</span>
+                                <p className="text-2xl font-black">{yearlyStats.profit.toLocaleString()}원</p>
                             </div>
-                            <p className="text-[10px] opacity-60 text-right">총 {yearlyStats.count}건의 거래</p>
                         </div>
                     </div>
-                </div>
 
-                {/* Transaction History */}
-                <div className="lg:col-span-2">
                     <div className="bg-white rounded-3xl shadow-sm border border-[#E5E7EB] overflow-hidden print:shadow-none print:border-gray-300">
                         <div className="p-6 border-b border-[#E5E7EB] flex justify-between items-center bg-white">
                             <h2 className="text-lg font-bold text-[#1A1A1A]">상세 거래 내역</h2>
                             <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full print:border print:border-gray-300">
-                                총 {filteredTransactions.length}건
+                                총 {sortedTransactions.length}건
                             </span>
                         </div>
                         <div className="overflow-x-auto">
@@ -423,6 +655,13 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[#E5E7EB]">
+                                    {sortedTransactions.length === 0 && (
+                                        <tr>
+                                            <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic text-sm">
+                                                이 기간의 거래 내역이 없습니다.
+                                            </td>
+                                        </tr>
+                                    )}
                                     {sortedTransactions.map((t) => (
                                         <tr key={t.id} className="hover:bg-[#F9FAFB] transition-colors group print:hover:bg-transparent">
                                             <td className="px-6 py-4">
@@ -434,11 +673,18 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">
-                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-tighter ${
-                                                    t.type === 'Income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                                                } print:bg-transparent print:border ${t.type === 'Income' ? 'print:border-emerald-200' : 'print:border-rose-200'}`}>
-                                                    {t.type === 'Income' ? 'Income' : 'Expense'}
-                                                </span>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-tighter w-fit ${
+                                                        t.type === 'Income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                                                    } print:bg-transparent print:border ${t.type === 'Income' ? 'print:border-emerald-200' : 'print:border-rose-200'}`}>
+                                                        {t.type === 'Income' ? 'Income' : 'Expense'}
+                                                    </span>
+                                                    {t.registrationType && (
+                                                        <span className={`text-[9px] font-bold ${t.registrationType === 'New' ? 'text-indigo-600' : 'text-amber-600'}`}>
+                                                            {t.registrationType === 'New' ? '신규' : '재등록'}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="text-sm font-bold text-gray-700">{t.category}</div>
@@ -456,13 +702,6 @@ export const FinancialReport: React.FC<FinancialReportProps> = ({ transactions, 
                                             </td>
                                         </tr>
                                     ))}
-                                    {filteredTransactions.length === 0 && (
-                                        <tr>
-                                            <td colSpan={5} className="px-6 py-20 text-center text-gray-400 text-sm italic">
-                                                선택하신 기간에 거래 내역이 없습니다.
-                                            </td>
-                                        </tr>
-                                    )}
                                 </tbody>
                             </table>
                         </div>

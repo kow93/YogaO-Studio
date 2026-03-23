@@ -10,6 +10,7 @@ interface ClassAttendanceModalProps {
     memberships: Membership[];
     attendance: AttendanceRecord[];
     toggleAttendance?: (studentId: string, date: string, classTime: string, classId?: string) => void;
+    isSubmitting?: boolean;
     updateStudent?: (studentId: string, updates: Partial<Student>) => void;
     classInfo: { classItem: ClassSchedule, date: dayjs.Dayjs } 
 }
@@ -21,8 +22,9 @@ const StudentAttendanceItem: React.FC<{
     classTimeString: string;
     classId: string;
     toggleAttendance?: (studentId: string, date: string, classTime: string, classId?: string) => void;
+    isSubmitting?: boolean;
     updateStudent?: (studentId: string, updates: Partial<Student>) => void;
-}> = React.memo(({ student, record, dateString, classTimeString, classId, toggleAttendance, updateStudent }) => {
+}> = React.memo(({ student, record, dateString, classTimeString, classId, toggleAttendance, isSubmitting, updateStudent }) => {
     return (
         <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors space-y-3">
             <div className="flex justify-between items-center">
@@ -33,8 +35,9 @@ const StudentAttendanceItem: React.FC<{
                 <input 
                     type="checkbox" 
                     checked={!!record} 
+                    disabled={isSubmitting}
                     onChange={() => toggleAttendance && toggleAttendance(student.id, dateString, classTimeString, classId)} 
-                    className="h-6 w-6 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    className={`h-6 w-6 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                 />
             </div>
             <div>
@@ -51,7 +54,7 @@ const StudentAttendanceItem: React.FC<{
 });
 
 export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({ 
-    isOpen, onClose, students, memberships, attendance, toggleAttendance, updateStudent, classInfo 
+    isOpen, onClose, students, memberships, attendance, toggleAttendance, isSubmitting, updateStudent, classInfo 
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const { classItem, date } = classInfo;
@@ -148,6 +151,7 @@ export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({
                             classTimeString={classTimeString}
                             classId={classItem.id}
                             toggleAttendance={toggleAttendance}
+                            isSubmitting={isSubmitting}
                             updateStudent={updateStudent}
                         />
                     ))}

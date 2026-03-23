@@ -52,6 +52,28 @@ export interface AttendanceRecord {
   classId?: string;
   date: string; // YYYY-MM-DD
   classTime: string; // "HH:mm - ClassName"
+  class_info?: string; // "[오전 10:10] 활기찬 요가"
+}
+
+export interface AttendanceFormatted {
+  attendance_id: string;
+  student_id: string;
+  attendance_date_formatted: string; // YYYY-MM-DD
+  attendance_date?: string; // Raw date
+  class_time: string; // HH:mm
+  class_info: string;
+  name: string;
+}
+
+export interface TransactionHistory {
+  id: string;
+  type: 'Income' | 'Expense';
+  category: string;
+  amount: number;
+  date: string;
+  description: string;
+  student_id?: string;
+  membership_id?: string;
 }
 
 export enum ExpenseCategory {
@@ -83,6 +105,7 @@ export interface Transaction {
     description: string;
     studentId?: string;
     membershipId?: string;
+    registrationType?: 'New' | 'Renewal';
 }
 
 export interface ClassSchedule {
