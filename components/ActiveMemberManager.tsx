@@ -145,21 +145,27 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             if (!student) return null;
             
             const studentMemberships = memberships.filter(m => {
-                if (m.studentId !== student.id || m.refundAmount) return false;
+                if (m.studentId !== student.id) return false;
                 
+                const startDate = dayjs(m.startDate).startOf('day');
                 const endDate = dayjs(m.endDate).startOf('day');
-                const today = dayjs().startOf('day');
                 
+                // If refunded, show if it's currently within its date range
+                if (m.refundAmount) {
+                    return (today.isAfter(startDate) || today.isSame(startDate)) && (today.isBefore(endDate) || today.isSame(endDate));
+                }
+
                 // Check if currently holding
                 if (m.holdStartDate && m.holdEndDate) {
                     const holdStart = dayjs(m.holdStartDate).startOf('day');
                     const holdEnd = dayjs(m.holdEndDate).startOf('day');
                     if ((today.isAfter(holdStart) || today.isSame(holdStart)) && (today.isBefore(holdEnd) || today.isSame(holdEnd))) {
-                        return true; // Keep in list if holding
+                        return true; 
                     }
                 }
                 
-                return endDate.isAfter(today) || endDate.isSame(today);
+                // Active if today is between start and end (inclusive)
+                return (today.isAfter(startDate) || today.isSame(startDate)) && (today.isBefore(endDate) || today.isSame(endDate));
             });
             
             if (studentMemberships.length === 0) return null;
@@ -208,22 +214,45 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         return d.isValid() ? d.format('YYYY-MM-DD') : '-';
     };
 
-    const calculateUsageStatus = (studentId: string, membership: Membership) => {
-        if (!membership || !membership.totalSessions) return { text: '-', isExceeded: false };
+    const getTotalSessions = (passType: string): number => {
+        if (!passType) return 0;
+        if (passType.includes('원데이')) return 1;
+        if (passType.includes('1주일')) return 5;
         
-        const usedCount = attendance.filter(a => 
-            a.studentId === studentId && 
-            dayjs(a.date).isAfter(dayjs(membership.startDate).subtract(1, 'day')) && 
-            dayjs(a.date).isBefore(dayjs(membership.endDate).add(1, 'day'))
-        ).length;
+        let base = 0;
+        if (passType.includes('주 2회')) base = 8;
+        else if (passType.includes('주 3회')) base = 12;
+        else if (passType.includes('주 5회')) base = 20;
+        
+        if (passType.includes('1개월')) return base;
+        if (passType.includes('3개월')) return base * 3;
+        if (passType.includes('6개월')) return base * 6;
+        
+        return 0;
+    };
 
-        const total = membership.totalSessions;
+    const calculateUsageStatus = (studentId: string, membership: Membership) => {
+        if (!membership) return { text: '-', isExceeded: false };
+        if (membership.refundAmount) return { text: '환불 완료', isExceeded: false };
+        
+        const total = getTotalSessions(membership.passType);
+        if (total === 0) return { text: '-', isExceeded: false };
+
+        const mStart = dayjs(membership.startDate).startOf('day');
+        
+        const usedCount = attendance.filter(a => {
+            if (a.studentId !== studentId) return false;
+            const aDate = dayjs(a.date).startOf('day');
+            // Only count attendance on or after membership start date
+            return aDate.isSame(mStart) || aDate.isAfter(mStart);
+        }).length;
+
         const remaining = total - usedCount;
         
         if (remaining < 0) {
-            return { text: `${usedCount} / ${total} (초과)`, isExceeded: true };
+            return { text: `${usedCount} / ${total} (추가 결제 필요)`, isExceeded: true };
         }
-        return { text: `${usedCount} / ${total} (잔여: ${remaining}회)`, isExceeded: false };
+        return { text: `${usedCount} / ${total} (잔여: ${Math.max(0, remaining)}회)`, isExceeded: false };
     };
 
     const handleMemoSave = (studentId: string, newMemo: string) => {
@@ -252,8 +281,9 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             <td className="px-6 py-4">
                 {(() => {
                     const { text, isExceeded } = calculateUsageStatus(member.id, member.membership);
+                    const isRefunded = member.membership?.refundAmount;
                     return (
-                        <div className={`text-sm font-bold ${isExceeded ? 'text-red-600' : 'text-indigo-600'}`}>
+                        <div className={`text-sm font-bold ${isRefunded ? 'text-gray-400' : isExceeded ? 'text-red-600' : 'text-indigo-600'}`}>
                             {text}
                         </div>
                     );
