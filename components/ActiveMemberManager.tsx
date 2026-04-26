@@ -5,7 +5,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import { Student, Membership, AttendanceRecord, PassType, Transaction } from '../types';
 import { SearchIcon, CloseIcon, DownloadIcon, FinancialsIcon } from './icons';
-import { PASS_PRICES } from '../constants';
+import { PASS_PRICES, PASS_OPTIONS } from '../constants';
 import * as XLSX from 'xlsx';
 
 dayjs.extend(utc);
@@ -218,6 +218,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         if (!passType) return 0;
         if (passType.includes('원데이')) return 1;
         if (passType.includes('1주일')) return 5;
+        if (passType.includes('임산부 요가')) return 8; // 주 2회 기준 1개월 8회
         
         let base = 0;
         if (passType.includes('주 2회')) base = 8;
@@ -507,9 +508,21 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                             onChange={(e) => setUpgradePassType(e.target.value as PassType)}
                                             className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                                         >
-                                            {Object.values(PassType).map(type => (
-                                                <option key={type} value={type}>{type} - {PASS_PRICES[type].toLocaleString()}원</option>
-                                            ))}
+                                            <optgroup label="정규 이용권">
+                                                {PASS_OPTIONS.filter(o => !o.value.includes('임산부') && !o.value.includes('원데이') && !o.value.includes('1주일')).map(option => (
+                                                    <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
+                                                ))}
+                                            </optgroup>
+                                            <optgroup label="스페셜 클래스">
+                                                {PASS_OPTIONS.filter(o => o.value.includes('임산부')).map(option => (
+                                                    <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
+                                                ))}
+                                            </optgroup>
+                                            <optgroup label="체험권">
+                                                {PASS_OPTIONS.filter(o => o.value.includes('원데이') || o.value.includes('1주일')).map(option => (
+                                                    <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
+                                                ))}
+                                            </optgroup>
                                         </select>
                                     </div>
 

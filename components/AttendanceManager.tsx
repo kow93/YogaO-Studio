@@ -114,6 +114,57 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
     // Weekly View Logic
     const startOfWeek = useMemo(() => getStartOfWeek(currentDate), [currentDate]);
 
+    // New logic for 2026-05-01 schedule changes
+    const getEffectiveClassesForDate = useCallback((date: dayjs.Dayjs) => {
+        const targetDate = date.startOf('day');
+        const cutoff = dayjs('2026-05-01').startOf('day');
+        const dayOfWeek = targetDate.day();
+        
+        let filtered = schedule.filter(c => c.dayOfWeek === dayOfWeek);
+
+        if (targetDate.isBefore(cutoff)) {
+            return filtered;
+        }
+
+        // Apply 2026-05-01 logic
+        // 1. Mon, Wed: Add '11:30 - 임산부 요가'
+        if (dayOfWeek === 1 || dayOfWeek === 3) {
+            filtered = [...filtered, {
+                id: `special-pre-${dayOfWeek}`,
+                dayOfWeek,
+                startTime: '11:30',
+                endTime: '12:30',
+                className: '임산부 요가',
+                color: 'pink'
+            }];
+        }
+
+        // 2. Thu: Delete '활기찬 요가', replace with split '깊어지는 요가'
+        if (dayOfWeek === 4) {
+            filtered = filtered.filter(c => c.className !== '활기찬 요가');
+            filtered = [...filtered, 
+                {
+                    id: 'special-deep-am-4',
+                    dayOfWeek: 4,
+                    startTime: '09:30',
+                    endTime: '12:30',
+                    className: '깊어지는 요가(오전)',
+                    color: 'purple'
+                },
+                {
+                    id: 'special-deep-pm-4',
+                    dayOfWeek: 4,
+                    startTime: '17:30',
+                    endTime: '21:00',
+                    className: '깊어지는 요가(오후)',
+                    color: 'purple'
+                }
+            ];
+        }
+
+        return filtered;
+    }, [schedule]);
+
     const handleClassClick = useCallback((classItem: ClassSchedule, dayIndex: number) => {
         const classDate = startOfWeek.add(dayIndex, 'day');
         setModalInfo({ type: 'attendance', data: { classItem, date: classDate } });
@@ -198,8 +249,7 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
                             const isToday = day.isSame(dayjs(), 'day');
                             const dateStr = day.format('YYYY-MM-DD');
                             const count = attendanceByDate.get(dateStr) || 0;
-                            const dayOfWeek = day.day();
-                            const dayClasses = schedule.filter(c => c.dayOfWeek === dayOfWeek);
+                            const dayClasses = getEffectiveClassesForDate(day);
 
                             return (
                                 <div 
@@ -262,7 +312,7 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
                                         <PlusIcon className="w-4 h-4 text-gray-200 opacity-0 group-hover:opacity-100 transition-opacity" />
                                     </div>
                                 ))}
-                                {schedule.filter(c => c.dayOfWeek === dayIndex + 1).map(c => (
+                                {getEffectiveClassesForDate(startOfWeek.add(dayIndex, 'day')).map(c => (
                                     <ClassBlock 
                                         key={c.id}
                                         classItem={c}

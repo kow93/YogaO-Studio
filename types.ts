@@ -11,6 +11,7 @@ export enum PassType {
     MONTHLY_5_PER_WEEK = '주 5회 / 1개월',
     QUARTERLY_5_PER_WEEK = '주 5회 / 3개월',
     HALF_YEARLY_5_PER_WEEK = '주 5회 / 6개월',
+    PRENATAL_MONTHLY = '임산부 요가 / 1개월',
 }
 
 export interface Student {

@@ -48,7 +48,14 @@ export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const { classItem, date } = classInfo;
     const dateString = date.format('YYYY-MM-DD');
-    const classTimeString = `${classItem.startTime} - ${classItem.className}`;
+    
+    // Updated classTimeString construction for May 2026 logic
+    const classTimeString = useMemo(() => {
+        if (classItem.className.includes('깊어지는')) {
+            return `${classItem.startTime}~${classItem.endTime} - ${classItem.className}`;
+        }
+        return `${classItem.startTime} - ${classItem.className}`;
+    }, [classItem]);
 
     const displayStudents = useMemo(() => {
         const targetDate = date.tz('Asia/Seoul').startOf('day');

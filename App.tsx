@@ -286,7 +286,7 @@ const App: React.FC = () => {
             const isNewPassShortTerm = passType === PassType.ONE_DAY || passType === PassType.ONE_WEEK;
             const isPrevPassShortTerm = lastMembership && (lastMembership.passType === PassType.ONE_DAY || lastMembership.passType === PassType.ONE_WEEK);
 
-            if (!isNewPassShortTerm && !isPrevPassShortTerm) {
+            if (hasPreviousMembership && !isNewPassShortTerm && !isPrevPassShortTerm) {
                 price -= 10000;
             }
         }
@@ -385,7 +385,10 @@ const App: React.FC = () => {
             status: 'Upgraded' as const,
         };
 
-        const newEndDate = calculateEndDate(today.toDate(), newPassType);
+        const startBase = dayjs(original.endDate).isAfter(today) 
+                        ? dayjs(original.endDate) 
+                        : today;
+        const newEndDate = calculateEndDate(startBase.toDate(), newPassType);
 
         const newMembership: Membership = {
             id: crypto.randomUUID(),

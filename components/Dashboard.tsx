@@ -125,9 +125,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
         const dayCounts = getDaysInMonthCount(statsDate);
 
         // [A] 프로그램별 평균 (Bar Chart)
-        // 1. 프로그램별 평균 (Bar Chart): attendance 배열을 루프 돌려.
-        // item.class_info 문자열 안에 '강인한', '활기찬', '고요한' 이라는 글자가 포함만 되어 있으면 해당 그룹으로 넣어줘.
-        const programs = ['강인한', '활기찬', '고요한'];
+        const isAfterMay2026 = statsDate.isAfter(dayjs('2026-04-30')) || statsDate.isSame(dayjs('2026-05-01'), 'month');
+        
+        let programs = ['강인한', '활기찬', '고요한'];
+        if (isAfterMay2026) {
+            programs = ['강인한', '활기찬', '고요한', '깊어지는 요가(오전)', '깊어지는 요가(오후)', '임산부 요가'];
+        }
+
         const programData = programs.map(p => {
             const programAttendance = monthAttendance.filter(a => {
                 const d = dayjs(a.formattedDate).day();
@@ -147,12 +151,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ students, memberships, exp
         console.log('분류된 프로그램 데이터:', programData);
 
         // [B] 시간대별 평균 (Line Chart)
-        // 2. 시간대별 평균 (Line Chart): 기준 시간을 ['10:10', '18:10', '19:40']으로 잡아.
-        const slots = [
+        let slots = [
             { label: '오전 10:10', time: '10:10' },
             { label: '오후 18:10', time: '18:10' },
             { label: '오후 19:40', time: '19:40' }
         ];
+        
+        // 2026-05 이후 신규 시간대 추가
+        if (isAfterMay2026) {
+            slots = [
+                { label: '오전 09:30', time: '09:30' },
+                { label: '오전 10:10', time: '10:10' },
+                { label: '오전 11:30', time: '11:30' },
+                { label: '오후 17:30', time: '17:30' },
+                { label: '오후 18:10', time: '18:10' },
+                { label: '오후 19:40', time: '19:40' }
+            ];
+        }
+
         const timeSlotData = slots.map(s => {
             // item.class_info에 해당 시간 숫자('10:10' 등)가 포함만 되어 있으면 카운트해.
             const slotAttendance = monthAttendance.filter(a => {

@@ -32,6 +32,7 @@ export const PASS_OPTIONS: { label: PassType; value: PassType }[] = [
     { label: PassType.MONTHLY_5_PER_WEEK, value: PassType.MONTHLY_5_PER_WEEK },
     { label: PassType.QUARTERLY_5_PER_WEEK, value: PassType.QUARTERLY_5_PER_WEEK },
     { label: PassType.HALF_YEARLY_5_PER_WEEK, value: PassType.HALF_YEARLY_5_PER_WEEK },
+    { label: PassType.PRENATAL_MONTHLY, value: PassType.PRENATAL_MONTHLY },
 ];
 
 export const PASS_PRICES: Record<PassType, number> = {
@@ -46,6 +47,7 @@ export const PASS_PRICES: Record<PassType, number> = {
     [PassType.MONTHLY_5_PER_WEEK]: 200000,
     [PassType.QUARTERLY_5_PER_WEEK]: 480000,
     [PassType.HALF_YEARLY_5_PER_WEEK]: 850000,
+    [PassType.PRENATAL_MONTHLY]: 200000,
 };
 
 export const PASS_DURATIONS: Record<PassType, { unit: 'day' | 'month'; value: number }> = {
@@ -60,6 +62,7 @@ export const PASS_DURATIONS: Record<PassType, { unit: 'day' | 'month'; value: nu
     [PassType.MONTHLY_5_PER_WEEK]: { unit: 'month', value: 1 },
     [PassType.QUARTERLY_5_PER_WEEK]: { unit: 'month', value: 3 },
     [PassType.HALF_YEARLY_5_PER_WEEK]: { unit: 'month', value: 6 },
+    [PassType.PRENATAL_MONTHLY]: { unit: 'month', value: 1 },
 };
 
 export const CLASS_TIMES = ['10:10 - 11:10', '18:10 - 19:10', '19:40 - 20:40'];

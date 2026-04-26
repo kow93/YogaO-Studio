@@ -92,9 +92,21 @@ const AddStudentModal: React.FC<{
                     <div>
                         <label htmlFor="passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
                         <select id="passType" value={passType} onChange={e => setPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-                            {PASS_OPTIONS.map(option => (
-                                <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
-                            ))}
+                            <optgroup label="정규 이용권">
+                                {PASS_OPTIONS.filter(o => !o.value.includes('임산부') && !o.value.includes('원데이') && !o.value.includes('1주일')).map(option => (
+                                    <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
+                                ))}
+                            </optgroup>
+                            <optgroup label="스페셜 클래스">
+                                {PASS_OPTIONS.filter(o => o.value.includes('임산부')).map(option => (
+                                    <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
+                                ))}
+                            </optgroup>
+                            <optgroup label="체험권">
+                                {PASS_OPTIONS.filter(o => o.value.includes('원데이') || o.value.includes('1주일')).map(option => (
+                                    <option key={option.value} value={option.value}>{option.label} - {PASS_PRICES[option.value].toLocaleString()}원</option>
+                                ))}
+                            </optgroup>
                         </select>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -151,9 +163,14 @@ const ReregisterForm: React.FC<{
 
     const getDefaultStartDate = () => {
         if (latestMembership && latestMembership.endDate) {
-            const nextDay = dayjs(latestMembership.endDate).add(1, 'day');
-            if (nextDay.isValid()) {
-                return nextDay.format('YYYY-MM-DD');
+            const end = dayjs(latestMembership.endDate);
+            // 만료일이 오늘보다 미래라면 기존 만료일 다음날을 시작점으로, 아니라면 오늘을 시작점으로 함
+            const base = end.isAfter(dayjs()) 
+                ? end.add(1, 'day') 
+                : dayjs();
+            
+            if (base.isValid()) {
+                return base.format('YYYY-MM-DD');
             }
         }
         return dayjs().format('YYYY-MM-DD');
@@ -177,8 +194,9 @@ const ReregisterForm: React.FC<{
         onAddMembership(student.id, passType, startDate, paymentDate, paymentMethod, cashReceiptIssued, undefined, 0, endDate);
     };
 
-    // 직전 이용권이 원데이 또는 1주일권인지 확인
+    // 직전 이용권이 원데이 또는 1주일권인지 확인. 또한 직전 이용권이 존재해야 할인이 가능함.
     const isPrevShortTerm = latestMembership && (latestMembership.passType === PassType.ONE_DAY || latestMembership.passType === PassType.ONE_WEEK);
+    const canBeDiscounted = latestMembership && !isPrevShortTerm;
 
     // 재등록 폼에서는 원데이, 1주일권을 선택지에서 제외
     const availableOptions = PASS_OPTIONS.filter(option => option.value !== PassType.ONE_DAY && option.value !== PassType.ONE_WEEK);
@@ -189,19 +207,29 @@ const ReregisterForm: React.FC<{
             <div>
                 <label htmlFor="rereg-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
                 <select id="rereg-passType" value={passType} onChange={e => setPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-                    {availableOptions.map(option => {
-                        // 직전 이용권이 체험권(원데이/1주일)이면 재등록 할인을 적용하지 않음
-                        const isDiscountable = !isPrevShortTerm;
-                        const price = PASS_PRICES[option.value] - (isDiscountable ? 10000 : 0);
-                        return (
-                            <option key={option.value} value={option.value}>
-                                {option.label} - {price.toLocaleString()}원 {isDiscountable ? '(재등록 할인 적용)' : ''}
-                            </option>
-                        );
-                    })}
+                    <optgroup label="정규 이용권">
+                        {availableOptions.filter(o => !o.value.includes('임산부')).map(option => {
+                            const price = PASS_PRICES[option.value] - (canBeDiscounted ? 10000 : 0);
+                            return (
+                                <option key={option.value} value={option.value}>
+                                    {option.label} - {price.toLocaleString()}원 {canBeDiscounted ? '(재등록 할인 적용)' : ''}
+                                </option>
+                            );
+                        })}
+                    </optgroup>
+                    <optgroup label="스페셜 클래스">
+                        {availableOptions.filter(o => o.value.includes('임산부')).map(option => {
+                            const price = PASS_PRICES[option.value] - (canBeDiscounted ? 10000 : 0);
+                            return (
+                                <option key={option.value} value={option.value}>
+                                    {option.label} - {price.toLocaleString()}원 {canBeDiscounted ? '(재등록 할인 적용)' : ''}
+                                </option>
+                            );
+                        })}
+                    </optgroup>
                 </select>
                 <p className="text-xs text-indigo-600 mt-1">
-                    * {isPrevShortTerm 
+                    * {!canBeDiscounted 
                         ? "원데이/1주일권 이용 회원은 정규 이용권 전환 시 재등록 할인이 적용되지 않습니다." 
                         : "재등록 시 10,000원 자동 할인이 적용됩니다."}
                 </p>
@@ -276,9 +304,21 @@ const PastMembershipForm: React.FC<{
             <div>
                 <label htmlFor="past-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
                 <select id="past-passType" value={passType} onChange={handlePassChange} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
-                    {PASS_OPTIONS.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
+                    <optgroup label="정규 이용권">
+                        {PASS_OPTIONS.filter(o => !o.value.includes('임산부') && !o.value.includes('원데이') && !o.value.includes('1주일')).map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </optgroup>
+                    <optgroup label="스페셜 클래스">
+                        {PASS_OPTIONS.filter(o => o.value.includes('임산부')).map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </optgroup>
+                    <optgroup label="체험권">
+                        {PASS_OPTIONS.filter(o => o.value.includes('원데이') || o.value.includes('1주일')).map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </optgroup>
                 </select>
             </div>
             
@@ -350,15 +390,39 @@ const UpgradeForm: React.FC<{
             <div>
                 <label htmlFor="upgrade-passType" className="block text-sm font-medium text-gray-700">변경할 이용권 (업그레이드)</label>
                 <select id="upgrade-passType" value={newPassType} onChange={e => setNewPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-emerald-500 focus:border-emerald-500">
-                    {PASS_OPTIONS.map(option => {
-                        const optionPrice = PASS_PRICES[option.value];
-                        const diff = optionPrice - currentPrice;
-                        return (
-                            <option key={option.value} value={option.value} disabled={diff < 0}>
-                                {option.label} - {optionPrice.toLocaleString()}원 ({diff >= 0 ? `+${diff.toLocaleString()}원` : `${diff.toLocaleString()}원`})
-                            </option>
-                        );
-                    })}
+                    <optgroup label="정규 이용권">
+                        {PASS_OPTIONS.filter(o => !o.value.includes('임산부') && !o.value.includes('원데이') && !o.value.includes('1주일')).map(option => {
+                            const optionPrice = PASS_PRICES[option.value];
+                            const diff = optionPrice - currentPrice;
+                            return (
+                                <option key={option.value} value={option.value} disabled={diff < 0}>
+                                    {option.label} - {optionPrice.toLocaleString()}원 ({diff >= 0 ? `+${diff.toLocaleString()}원` : `${diff.toLocaleString()}원`})
+                                </option>
+                            );
+                        })}
+                    </optgroup>
+                    <optgroup label="스페셜 클래스">
+                        {PASS_OPTIONS.filter(o => o.value.includes('임산부')).map(option => {
+                            const optionPrice = PASS_PRICES[option.value];
+                            const diff = optionPrice - currentPrice;
+                            return (
+                                <option key={option.value} value={option.value} disabled={diff < 0}>
+                                    {option.label} - {optionPrice.toLocaleString()}원 ({diff >= 0 ? `+${diff.toLocaleString()}원` : `${diff.toLocaleString()}원`})
+                                </option>
+                            );
+                        })}
+                    </optgroup>
+                    <optgroup label="체험권">
+                        {PASS_OPTIONS.filter(o => o.value.includes('원데이') || o.value.includes('1주일')).map(option => {
+                            const optionPrice = PASS_PRICES[option.value];
+                            const diff = optionPrice - currentPrice;
+                            return (
+                                <option key={option.value} value={option.value} disabled={diff < 0}>
+                                    {option.label} - {optionPrice.toLocaleString()}원 ({diff >= 0 ? `+${diff.toLocaleString()}원` : `${diff.toLocaleString()}원`})
+                                </option>
+                            );
+                        })}
+                    </optgroup>
                 </select>
                 {diffPrice < 0 && <p className="text-xs text-red-500 mt-1">현재 이용권보다 저렴한 이용권으로는 업그레이드할 수 없습니다.</p>}
             </div>
@@ -633,9 +697,21 @@ const StudentDetailModal: React.FC<{
                                     <div>
                                         <label htmlFor="edit-passType" className="block text-sm font-medium text-gray-700">이용권 종류</label>
                                         <select id="edit-passType" value={passType} onChange={e => setPassType(e.target.value as PassType)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
-                                            {PASS_OPTIONS.map(option => (
-                                                <option key={option.value} value={option.value}>{option.label}</option>
-                                            ))}
+                                            <optgroup label="정규 이용권">
+                                                {PASS_OPTIONS.filter(o => !o.value.includes('임산부') && !o.value.includes('원데이') && !o.value.includes('1주일')).map(option => (
+                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                ))}
+                                            </optgroup>
+                                            <optgroup label="스페셜 클래스">
+                                                {PASS_OPTIONS.filter(o => o.value.includes('임산부')).map(option => (
+                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                ))}
+                                            </optgroup>
+                                            <optgroup label="체험권">
+                                                {PASS_OPTIONS.filter(o => o.value.includes('원데이') || o.value.includes('1주일')).map(option => (
+                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                ))}
+                                            </optgroup>
                                         </select>
                                     </div>
                                     <div>
