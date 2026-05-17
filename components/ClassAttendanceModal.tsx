@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { Student, AttendanceRecord, Membership, ClassSchedule } from '../types';
 import { SearchIcon, CloseIcon } from './icons';
@@ -25,6 +25,28 @@ const StudentAttendanceItem: React.FC<{
     isSubmitting?: boolean;
     updateStudent?: (studentId: string, updates: Partial<Student>) => void;
 }> = React.memo(({ student, record, dateString, classTimeString, classId, toggleAttendance, isSubmitting, updateStudent }) => {
+    
+    // 즉시 반응 및 중복 클릭 방지를 위한 내부 로컬 상태
+    const [localChecked, setLocalChecked] = useState(!!record);
+    const [isLocalSubmitting, setIsLocalSubmitting] = useState(false);
+
+    // 데이터베이스 저장 완료로 실제 record 데이터가 동기화되면 잠금 해제
+    useEffect(() => {
+        setLocalChecked(!!record);
+        setIsLocalSubmitting(false);
+    }, [record]);
+
+    const handleChange = () => {
+        if (isLocalSubmitting || isSubmitting) return;
+
+        setIsLocalSubmitting(true);   // 클릭하자마자 해당 체크박스 즉시 잠금 (연타 방지)
+        setLocalChecked(!localChecked); // 0초 만에 화면 체크 표시 먼저 변경 (렉 제거)
+
+        if (toggleAttendance) {
+            toggleAttendance(student.id, dateString, classTimeString, classId);
+        }
+    };
+
     return (
         <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors flex justify-between items-center">
             <div>
@@ -33,10 +55,10 @@ const StudentAttendanceItem: React.FC<{
             </div>
             <input 
                 type="checkbox" 
-                checked={!!record} 
-                disabled={isSubmitting}
-                onChange={() => toggleAttendance && toggleAttendance(student.id, dateString, classTimeString, classId)} 
-                className={`h-7 w-7 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                checked={localChecked} 
+                disabled={isLocalSubmitting || isSubmitting}
+                onChange={handleChange} 
+                className={`h-7 w-7 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 ${(isLocalSubmitting || isSubmitting) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             />
         </div>
     );
@@ -49,7 +71,6 @@ export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({
     const { classItem, date } = classInfo;
     const dateString = date.format('YYYY-MM-DD');
     
-    // Updated classTimeString construction for May 2026 logic
     const classTimeString = useMemo(() => {
         if (classItem.className.includes('깊어지는')) {
             return `${classItem.startTime}~${classItem.endTime} - ${classItem.className}`;
@@ -159,4 +180,5 @@ export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({
             </div>
         </div>
     );
+
 };
