@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { Student, Membership, AttendanceRecord, ViewType, PassType, Expense, ClassSchedule, Transaction, AttendanceFormatted } from './types';
 import { PASS_PRICES, PASS_DURATIONS, DEFAULT_SCHEDULE, calculateEndDate } from './constants';
@@ -52,7 +52,8 @@ const App: React.FC = () => {
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [schedule, setSchedule] = useState<ClassSchedule[]>(DEFAULT_SCHEDULE);
-    const [isSubmittingAttendance, setIsSubmittingAttendance] = useState(false);
+    const [submittingKeys, setSubmittingKeys] = useState<string[]>([]);
+    const pendingPromises = useRef<Record<string, Promise<any>>>({});
 
     const supabase = (window as any)._supabase;
 
@@ -818,15 +819,46 @@ const App: React.FC = () => {
    }, [supabase]);
 
     const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string) => {
-        if (isSubmittingAttendance) return;
-        setIsSubmittingAttendance(true);
+        const formattedDate = dayjs(date).format('YYYY-MM-DD');
+        const targetClassId = classId || '';
+        const opKey = `${studentId}_${formattedDate}_${targetClassId}`;
 
-        try {
-            const formattedDate = dayjs(date).format('YYYY-MM-DD');
-            const targetClassId = classId || '';
+        // 1. 즉각적인 로컬 UI 상태 전환 (0ms 렉 제로)
+        const student = students.find(s => s.id === studentId);
+        let willBeChecked = false;
 
-            if (supabase) {
-                // 1. Check if record exists for toggle logic
+        setAttendance(prev => {
+            const existing = prev.find(a => {
+                const aDate = dayjs(a.date).format('YYYY-MM-DD');
+                return a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
+            });
+
+            if (existing) {
+                willBeChecked = false;
+                return prev.filter(a => a.id !== existing.id);
+            } else {
+                willBeChecked = true;
+                const tempRecord: AttendanceRecord = {
+                    id: `temp-${crypto.randomUUID()}`,
+                    studentId,
+                    date: formattedDate,
+                    classTime,
+                    classId: targetClassId,
+                    studentName: student?.name || '',
+                    studentPhone: student?.phone || ''
+                };
+                return [...prev, tempRecord];
+            }
+        });
+
+        // 2. 비동기 데이터베이스 작업을 순차적(FIFO Queue)으로 체이닝하여 연타 및 레이스 컨디션 해결
+        setSubmittingKeys(prev => prev.includes(opKey) ? prev : [...prev, opKey]);
+
+        const nextPromise = (pendingPromises.current[opKey] || Promise.resolve())
+            .then(async () => {
+                if (!supabase) return;
+
+                // 데이터베이스 최신 상태 확인
                 const { data: existing, error: checkError } = await supabase
                     .from('attendance')
                     .select('attendance_id')
@@ -837,66 +869,52 @@ const App: React.FC = () => {
 
                 if (checkError) throw checkError;
 
-                if (existing) {
-                    // Toggle off: Delete
-                    const { error: deleteError } = await supabase
-                        .from('attendance')
-                        .delete()
-                        .eq('attendance_id', existing.attendance_id);
-                    
-                    if (deleteError) throw deleteError;
-                } else {
-                    // Toggle on: Upsert with unique constraint check
-                    const student = students.find(s => s.id === studentId);
-                    const { error: upsertError } = await supabase
-                        .from('attendance')
-                        .upsert([{
-                            student_id: studentId,
-                            attendance_date: formattedDate,
-                            class_info: classTime,
-                            class_id: targetClassId,
-                            name: student?.name || '',
-                            phone: student?.phone ? String(student?.phone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
-                        }], { 
-                            onConflict: 'student_id,attendance_date,class_id' 
-                        });
+                if (willBeChecked) {
+                    // 출석하려는 상태인데 DB에 없는 경우에만 Upsert 실행
+                    if (!existing) {
+                        const { error: upsertError } = await supabase
+                            .from('attendance')
+                            .upsert([{
+                                student_id: studentId,
+                                attendance_date: formattedDate,
+                                class_info: classTime,
+                                class_id: targetClassId,
+                                name: student?.name || '',
+                                phone: student?.phone ? String(student?.phone).replace(/[^0-9]/g, '').padStart(11, '0') : ''
+                            }], { 
+                                onConflict: 'student_id,attendance_date,class_id' 
+                            });
 
-                    if (upsertError) throw upsertError;
+                        if (upsertError) throw upsertError;
+                    }
+                } else {
+                    // 출석 취소하려는 상태인데 DB에 존재하는 경우에만 Delete 실행
+                    if (existing) {
+                        const { error: deleteError } = await supabase
+                            .from('attendance')
+                            .delete()
+                            .eq('attendance_id', existing.attendance_id);
+                        
+                        if (deleteError) throw deleteError;
+                    }
                 }
+
+                // 성공 시 백그라운드 데이터 동기화
                 await fetchData();
-            } else {
-                // Local state fallback
-                const localExists = attendance.find(a => {
-                    const aDate = dayjs(a.date).format('YYYY-MM-DD');
-                    return a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
-                });
+            })
+            .catch((error) => {
+                console.error("출석 동기화 중 오류 발생:", error);
+                // 에러 발생 시 최신 DB 상태로 전체 리프레시하여 자동 롤백/복구
+                fetchData();
+            })
+            .finally(() => {
+                // 특정 학생/수업에 대한 잠금 표시 해제
+                setSubmittingKeys(prev => prev.filter(k => k !== opKey));
+            });
 
-                if (localExists) {
-                    setAttendance(prev => prev.filter(a => a.id !== localExists.id));
-                } else {
-                    const student = students.find(s => s.id === studentId);
-                    const newRecord = { 
-                        id: crypto.randomUUID(), 
-                        studentId, 
-                        date: formattedDate, 
-                        classTime, 
-                        classId: targetClassId,
-                        studentName: student?.name,
-                        studentPhone: student?.phone
-                    };
-                    setAttendance(prev => [...prev, newRecord]);
-                }
-            }
-        } catch (error: any) {
-            alert("출석 처리 중 오류가 발생했습니다: " + error.message);
-            console.error(error);
-        } finally {
-            // Debounce: 500ms
-            setTimeout(() => {
-                setIsSubmittingAttendance(false);
-            }, 500);
-        }
-    }, [isSubmittingAttendance, supabase, students, attendance, fetchData]);
+        // 큐 갱신
+        pendingPromises.current[opKey] = nextPromise;
+    }, [supabase, students, fetchData]);
 
     const addOrUpdateSchedule = useCallback(async (classData: ClassSchedule) => {
         setSchedule(prev => {
@@ -1114,7 +1132,7 @@ const App: React.FC = () => {
                     attendance={attendance} 
                     schedule={schedule}
                     toggleAttendance={toggleAttendance}
-                    isSubmittingAttendance={isSubmittingAttendance}
+                    submittingKeys={submittingKeys}
                     addOrUpdateSchedule={addOrUpdateSchedule}
                     deleteSchedule={deleteSchedule}
                     updateStudent={updateStudent}

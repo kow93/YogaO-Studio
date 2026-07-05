@@ -3,6 +3,37 @@ import dayjs from 'dayjs';
 import { Student, AttendanceRecord, Membership, ClassSchedule } from '../types';
 import { SearchIcon, CloseIcon } from './icons';
 
+const CHOSUNG = [
+    'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+];
+
+function getChosung(text: string): string {
+    let result = '';
+    for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        if (code >= 0xAC00 && code <= 0xD7A3) {
+            const chosungIndex = Math.floor((code - 0xAC00) / 588);
+            result += CHOSUNG[chosungIndex];
+        } else {
+            result += text.charAt(i);
+        }
+    }
+    return result;
+}
+
+function matchKorean(name: string, keyword: string): boolean {
+    const normalizedName = (name || '').toLowerCase();
+    const normalizedKeyword = (keyword || '').toLowerCase();
+    
+    if (normalizedName.includes(normalizedKeyword)) {
+        return true;
+    }
+    
+    const nameChosung = getChosung(normalizedName);
+    const keywordChosung = getChosung(normalizedKeyword);
+    return nameChosung.includes(keywordChosung);
+}
+
 interface ClassAttendanceModalProps {
     isOpen: boolean; 
     onClose: () => void; 
@@ -10,7 +41,7 @@ interface ClassAttendanceModalProps {
     memberships: Membership[];
     attendance: AttendanceRecord[];
     toggleAttendance?: (studentId: string, date: string, classTime: string, classId?: string) => void;
-    isSubmitting?: boolean;
+    submittingKeys?: string[];
     updateStudent?: (studentId: string, updates: Partial<Student>) => void;
     classInfo: { classItem: ClassSchedule, date: dayjs.Dayjs } 
 }
@@ -26,22 +57,7 @@ const StudentAttendanceItem: React.FC<{
     updateStudent?: (studentId: string, updates: Partial<Student>) => void;
 }> = React.memo(({ student, record, dateString, classTimeString, classId, toggleAttendance, isSubmitting, updateStudent }) => {
     
-    // 즉시 반응 및 중복 클릭 방지를 위한 내부 로컬 상태
-    const [localChecked, setLocalChecked] = useState(!!record);
-    const [isLocalSubmitting, setIsLocalSubmitting] = useState(false);
-
-    // 데이터베이스 저장 완료로 실제 record 데이터가 동기화되면 잠금 해제
-    useEffect(() => {
-        setLocalChecked(!!record);
-        setIsLocalSubmitting(false);
-    }, [record]);
-
     const handleChange = () => {
-        if (isLocalSubmitting || isSubmitting) return;
-
-        setIsLocalSubmitting(true);   // 클릭하자마자 해당 체크박스 즉시 잠금 (연타 방지)
-        setLocalChecked(!localChecked); // 0초 만에 화면 체크 표시 먼저 변경 (렉 제거)
-
         if (toggleAttendance) {
             toggleAttendance(student.id, dateString, classTimeString, classId);
         }
@@ -50,22 +66,26 @@ const StudentAttendanceItem: React.FC<{
     return (
         <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors flex justify-between items-center">
             <div>
-                <p className="font-bold text-gray-900">{student.name}</p>
+                <div className="flex items-center gap-2">
+                    <p className="font-bold text-gray-900">{student.name}</p>
+                    {isSubmitting && (
+                        <span className="inline-block w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping" title="서버 동기화 중..." />
+                    )}
+                </div>
                 <p className="text-[10px] text-gray-400 font-medium">{student.phone}</p>
             </div>
             <input 
                 type="checkbox" 
-                checked={localChecked} 
-                disabled={isLocalSubmitting || isSubmitting}
+                checked={!!record} 
                 onChange={handleChange} 
-                className={`h-7 w-7 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 ${(isLocalSubmitting || isSubmitting) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                className="h-7 w-7 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 cursor-pointer transition-all duration-150"
             />
         </div>
     );
 });
 
 export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({ 
-    isOpen, onClose, students, memberships, attendance, toggleAttendance, isSubmitting, updateStudent, classInfo 
+    isOpen, onClose, students, memberships, attendance, toggleAttendance, submittingKeys, updateStudent, classInfo 
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const { classItem, date } = classInfo;
@@ -119,7 +139,7 @@ export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({
         attended.forEach(s => studentMap.set(s.id, s as Student));
 
         return Array.from(studentMap.values())
-            .filter(s => (s.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()))
+            .filter(s => matchKorean(s.name || '', searchTerm))
             .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             
     }, [students, memberships, date, searchTerm, attendance, dateString, classItem.id]);
@@ -159,19 +179,23 @@ export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({
                     <input type="text" placeholder="회원 이름 검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"/>
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2 space-y-2">
-                    {displayStudents.map(student => (
-                        <StudentAttendanceItem 
-                            key={student.id}
-                            student={student}
-                            record={attendanceMap.get(student.id)}
-                            dateString={dateString}
-                            classTimeString={classTimeString}
-                            classId={classItem.id}
-                            toggleAttendance={toggleAttendance}
-                            isSubmitting={isSubmitting}
-                            updateStudent={updateStudent}
-                        />
-                    ))}
+                    {displayStudents.map(student => {
+                        const opKey = `${student.id}_${dateString}_${classItem.id}`;
+                        const isStudentSubmitting = submittingKeys?.includes(opKey);
+                        return (
+                            <StudentAttendanceItem 
+                                key={student.id}
+                                student={student}
+                                record={attendanceMap.get(student.id)}
+                                dateString={dateString}
+                                classTimeString={classTimeString}
+                                classId={classItem.id}
+                                toggleAttendance={toggleAttendance}
+                                isSubmitting={isStudentSubmitting}
+                                updateStudent={updateStudent}
+                            />
+                        );
+                    })}
                     {displayStudents.length === 0 && <div className="py-12 text-center text-gray-400">유효한 회원이 없습니다.</div>}
                 </div>
                  <div className="pt-6 mt-auto">
