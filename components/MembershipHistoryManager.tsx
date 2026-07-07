@@ -18,6 +18,7 @@ interface MembershipHistoryManagerProps {
     addStudent: (studentData: Omit<Student, 'id' | 'registrationDate'>, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, discountAmount: number) => void;
     addMembership: (studentId: string, passType: PassType, startDate: string, paymentDate: string, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean, customPrice?: number, discountAmount?: number) => void;
     refundMembership: (membershipId: string, refundAmount: number, refundReason: string) => void;
+    deleteStudent?: (studentId: string) => void;
 }
 
 const formatDate = (dateStr: string | undefined) => {
@@ -31,7 +32,8 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
     memberships,
     addStudent,
     addMembership,
-    refundMembership
+    refundMembership,
+    deleteStudent
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -191,6 +193,22 @@ export const MembershipHistoryManager: React.FC<MembershipHistoryManagerProps> =
                                     {expandedStudentId === group.student.id && (
                                         <tr>
                                             <td colSpan={4} className="bg-gray-50 p-4">
+                                                <div className="flex justify-between items-center mb-3 px-1">
+                                                    <span className="text-xs font-bold text-gray-500">이용권 및 결제 히스토리</span>
+                                                    {deleteStudent && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (window.confirm(`${group.student.name} 회원을 정말로 삭제하시겠습니까? 관련된 모든 멤버십 및 출석 기록이 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`)) {
+                                                                    deleteStudent(group.student.id);
+                                                                }
+                                                            }}
+                                                            className="text-xs font-bold text-rose-500 hover:text-rose-700 hover:underline transition-colors flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-rose-100 shadow-sm"
+                                                        >
+                                                            <span>🗑️</span> 회원 정보 삭제
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                                                     <table className="w-full text-left">
                                                         <thead className="bg-gray-50 border-b border-gray-100">

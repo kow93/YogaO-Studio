@@ -54,6 +54,8 @@ const App: React.FC = () => {
     const [schedule, setSchedule] = useState<ClassSchedule[]>(DEFAULT_SCHEDULE);
     const [submittingKeys, setSubmittingKeys] = useState<string[]>([]);
     const pendingPromises = useRef<Record<string, Promise<any>>>({});
+    const attendanceRef = useRef<AttendanceRecord[]>([]);
+    attendanceRef.current = attendance;
 
     const supabase = (window as any)._supabase;
 
@@ -825,19 +827,31 @@ const App: React.FC = () => {
 
         // 1. 즉각적인 로컬 UI 상태 전환 (0ms 렉 제로)
         const student = students.find(s => s.id === studentId);
-        let willBeChecked = false;
+        
+        const existingRecord = attendanceRef.current.find(a => {
+            const aDate = dayjs(a.date).format('YYYY-MM-DD');
+            return a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
+        });
+
+        const willBeChecked = !existingRecord;
 
         setAttendance(prev => {
-            const existing = prev.find(a => {
-                const aDate = dayjs(a.date).format('YYYY-MM-DD');
-                return a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
-            });
-
-            if (existing) {
-                willBeChecked = false;
-                return prev.filter(a => a.id !== existing.id);
+            if (!willBeChecked) {
+                // 출석 취소 (삭제)
+                return prev.filter(a => {
+                    const aDate = dayjs(a.date).format('YYYY-MM-DD');
+                    const match = a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
+                    return !match;
+                });
             } else {
-                willBeChecked = true;
+                // 출석 체크 (추가)
+                // 중복 체크 방지
+                const alreadyExists = prev.some(a => {
+                    const aDate = dayjs(a.date).format('YYYY-MM-DD');
+                    return a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
+                });
+                if (alreadyExists) return prev;
+
                 const tempRecord: AttendanceRecord = {
                     id: `temp-${crypto.randomUUID()}`,
                     studentId,
@@ -1116,6 +1130,7 @@ const App: React.FC = () => {
                     updateStudent={updateStudent}
                     updateStudentAndMembership={updateStudentAndMembership}
                     upgradeMembership={upgradeMembership}
+                    deleteStudent={deleteStudent}
                 />;
             case 'memberships':
                 return <MembershipHistoryManager 
@@ -1124,6 +1139,7 @@ const App: React.FC = () => {
                     addStudent={addStudent}
                     addMembership={addMembership}
                     refundMembership={refundMembership}
+                    deleteStudent={deleteStudent}
                 />;
             case 'schedule':
                 return <AttendanceManager 

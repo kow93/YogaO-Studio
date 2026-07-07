@@ -19,6 +19,7 @@ interface ActiveMemberManagerProps {
     updateStudent: (studentId: string, updates: Partial<Student>) => void;
     updateStudentAndMembership?: (studentId: string, membershipId: string, studentUpdates: Partial<Student>, membershipUpdates: Partial<Membership>) => void;
     upgradeMembership?: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
+    deleteStudent?: (studentId: string) => void;
 }
 
 const MemoInput = ({ value, onSave }: { value: string, onSave: (val: string) => void }) => {
@@ -52,7 +53,8 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
     attendance,
     updateStudent,
     updateStudentAndMembership,
-    upgradeMembership
+    upgradeMembership,
+    deleteStudent
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingMember, setEditingMember] = useState<(Student & { membership?: Membership }) | null>(null);
@@ -467,15 +469,32 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                 </div>
 
                                 <div className="flex gap-4 pt-6">
+                                    {deleteStudent && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (window.confirm(`${editingMember.name} 회원을 정말로 삭제하시겠습니까? 관련 모든 멤버십 및 출석 기록이 함께 삭제되며 이 작업은 되돌릴 수 없습니다.`)) {
+                                                    deleteStudent(editingMember.id);
+                                                    setEditingMember(null);
+                                                    setShowUpgradeUI(false);
+                                                }
+                                            }}
+                                            className="px-5 py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold hover:bg-rose-100 transition-all text-sm whitespace-nowrap border border-rose-100 shadow-sm"
+                                        >
+                                            🗑️ 회원 삭제
+                                        </button>
+                                    )}
                                     <button
+                                        type="button"
                                         onClick={() => { setEditingMember(null); setShowUpgradeUI(false); }}
-                                        className="flex-1 px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-all"
+                                        className="flex-1 px-6 py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-all text-sm"
                                     >
                                         취소
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={handleEditSubmit}
-                                        className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100"
+                                        className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 text-sm"
                                     >
                                         수정 완료
                                     </button>

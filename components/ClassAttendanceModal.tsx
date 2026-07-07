@@ -64,7 +64,10 @@ const StudentAttendanceItem: React.FC<{
     };
 
     return (
-        <div className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-colors flex justify-between items-center">
+        <div 
+            onClick={handleChange}
+            className="p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-100 active:bg-gray-200/80 transition-all cursor-pointer flex justify-between items-center select-none"
+        >
             <div>
                 <div className="flex items-center gap-2">
                     <p className="font-bold text-gray-900">{student.name}</p>
@@ -77,8 +80,8 @@ const StudentAttendanceItem: React.FC<{
             <input 
                 type="checkbox" 
                 checked={!!record} 
-                onChange={handleChange} 
-                className="h-7 w-7 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 cursor-pointer transition-all duration-150"
+                onChange={() => {}} 
+                className="h-7 w-7 rounded-lg border-gray-200 text-indigo-600 focus:ring-indigo-500 transition-all duration-150 pointer-events-none"
             />
         </div>
     );
