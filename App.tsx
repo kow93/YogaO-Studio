@@ -61,103 +61,148 @@ const App: React.FC = () => {
 
     const fetchData = useCallback(async () => {
         if (!supabase) return;
-        const [
-            { data: studentsData, error: studentError },
-            { data: membershipsData, error: membershipError },
-            { data: attendanceData, error: attendanceError },
-            { data: attendanceFormattedData, error: attendanceFormattedError },
-            { data: expensesData, error: expenseError },
-            { data: transactionsData, error: transactionError },
-            { data: classesData, error: classError }
-        ] = await Promise.all([
-            supabase.from('student').select('*'),
-            supabase.from('membership').select('*'),
-            supabase.from('attendance').select('*'),
-            supabase.from('attendance_formatted').select('*'),
-            supabase.from('expense').select('*'),
-            supabase.from('transaction_history').select('*'),
-            supabase.from('classes').select('*')
-        ]);
-        
-        if (studentsData) {
-            const mappedStudents = studentsData.map((s: any) => ({
-                ...s,
-                id: s.student_id || s.id,
-                phone: s.phone ? String(s.phone).padStart(11, '0') : '',
-                registrationDate: s.registration_date || s.registrationDate
-            }));
-            setStudents(mappedStudents);
-        }
-        if (membershipsData) {
-            const mapped = membershipsData.map((m: any) => ({
-                id: m.id,
-                studentId: m.student_id || m.studentId,
-                passType: m.pass_type || m.passType,
-                startDate: m.start_date || m.startDate,
-                endDate: m.end_date || m.endDate,
-                price: m.price,
-                discountAmount: m.discount_amount || m.discountAmount,
-                refundAmount: m.refund_amount || m.refundAmount,
-                paymentDate: m.payment_date || m.paymentDate,
-                holdStartDate: m.hold_start_date || m.holdStartDate,
-                holdEndDate: m.hold_end_date || m.holdEndDate,
-                totalSessions: m.total_sessions || m.totalSessions,
-                paymentMethod: m.payment_method || m.paymentMethod,
-                cashReceiptIssued: m.cash_receipt_issued || m.cashReceiptIssued,
-            }));
-            setMemberships(mapped);
-        }
-        if (attendanceData) {
-            const mapped = attendanceData.map((a: any) => ({
-                id: a.attendance_id || a.id,
-                studentId: a.student_id || a.studentId,
-                studentName: a.name || a['이름'] || a.studentName,
-                studentPhone: a.phone || a['연락처'] || a.studentPhone,
-                classId: a.class_id || a.classId,
-                date: a.attendance_date || a['출석 날짜'] || a.date,
-                classTime: a.class_info || a['수업 시간 정보'] || a.classTime,
-            }));
-            setAttendance(mapped);
-        }
-        if (attendanceFormattedData) {
-            setAttendanceFormatted(attendanceFormattedData);
-        }
-        if (expensesData) {
-            const mappedExpenses = expensesData.map((e: any) => ({
-                id: e.id,
-                date: e.날짜 || e.date,
-                category: e.분류 || e.category,
-                description: e.내용 || e.description,
-                amount: typeof (e.금액 || e.amount) === 'string' 
-                    ? Number((e.금액 || e.amount).replace(/[^0-9.-]+/g,"")) 
-                    : Number(e.금액 || e.amount),
-                transactionId: e.transaction_id || e.transactionId
-            }));
-            setExpenses(mappedExpenses);
-        }
-        if (transactionsData) {
-            const mapped = transactionsData.map((t: any) => ({
-                id: t.id,
-                type: t.type,
-                category: t.category,
-                amount: t.amount,
-                date: t.date,
-                description: t.description,
-                studentId: t.student_id,
-                membershipId: t.membership_id
-            }));
-            setTransactions(mapped);
-        }
-        if (classesData) {
-            const mappedClasses = classesData.map((c: any) => ({
-                id: c.id,
-                dayOfWeek: c.day_of_week || c.dayOfWeek,
-                startTime: c.start_time || c.startTime,
-                endTime: c.end_time || c.endTime,
-                className: c.class_name || c.className,
-                color: c.color
-            }));
-            setSchedule(mappedClasses);
+
+        const fetchAllWithPagination = async (table: string) => {
+            let allData: any[] = [];
+            let offset = 0;
+            const limit = 1000;
+            let done = false;
+            while (!done) {
+                const { data, error } = await supabase
+                    .from(table)
+                    .select('*')
+                    .range(offset, offset + limit - 1);
+                
+                if (error) {
+                    if (error.code === 'PGRST205') {
+                        console.warn(`Table '${table}' is missing (PGRST205). Returning null gracefully.`);
+                        return null;
+                    }
+                    console.error(`Error pagination fetching ${table}:`, {
+                        code: error.code,
+                        message: error.message,
+                        details: error.details,
+                        hint: error.hint,
+                        errorObject: error
+                    });
+                    return null;
+                }
+                
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    if (data.length < limit) {
+                        done = true;
+                    } else {
+                        offset += limit;
+                    }
+                } else {
+                    done = true;
+                }
+            }
+            return allData;
+        };
+
+        try {
+            const [
+                studentsData,
+                membershipsData,
+                attendanceData,
+                attendanceFormattedData,
+                expensesData,
+                transactionsData,
+                classesData
+            ] = await Promise.all([
+                fetchAllWithPagination('student'),
+                fetchAllWithPagination('membership'),
+                fetchAllWithPagination('attendance'),
+                fetchAllWithPagination('attendance_formatted'),
+                fetchAllWithPagination('expense'),
+                fetchAllWithPagination('transaction_history'),
+                fetchAllWithPagination('classes')
+            ]);
+            
+            if (studentsData) {
+                const mappedStudents = studentsData.map((s: any) => ({
+                    ...s,
+                    id: s.student_id || s.id,
+                    phone: s.phone ? String(s.phone).padStart(11, '0') : '',
+                    registrationDate: s.registration_date || s.registrationDate
+                }));
+                setStudents(mappedStudents);
+            }
+            if (membershipsData) {
+                const mapped = membershipsData.map((m: any) => ({
+                    id: m.id,
+                    studentId: m.student_id || m.studentId,
+                    passType: m.pass_type || m.passType,
+                    startDate: m.start_date || m.startDate,
+                    endDate: m.end_date || m.endDate,
+                    price: m.price,
+                    discountAmount: m.discount_amount || m.discountAmount,
+                    refundAmount: m.refund_amount || m.refundAmount,
+                    paymentDate: m.payment_date || m.paymentDate,
+                    holdStartDate: m.hold_start_date || m.holdStartDate,
+                    holdEndDate: m.hold_end_date || m.holdEndDate,
+                    totalSessions: m.total_sessions || m.totalSessions,
+                    paymentMethod: m.payment_method || m.paymentMethod,
+                    cashReceiptIssued: m.cash_receipt_issued || m.cashReceiptIssued,
+                }));
+                setMemberships(mapped);
+            }
+            if (attendanceData) {
+                const mapped = attendanceData.map((a: any) => ({
+                    id: a.attendance_id || a.id,
+                    studentId: a.student_id || a.studentId,
+                    studentName: a.name || a['이름'] || a.studentName,
+                    studentPhone: a.phone || a['연락처'] || a.studentPhone,
+                    classId: a.class_id || a.classId,
+                    date: a.attendance_date || a['출석 날짜'] || a.date,
+                    classTime: a.class_info || a['수업 시간 정보'] || a.classTime,
+                }));
+                setAttendance(mapped);
+            }
+            if (attendanceFormattedData) {
+                setAttendanceFormatted(attendanceFormattedData);
+            }
+            if (expensesData) {
+                const mappedExpenses = expensesData.map((e: any) => ({
+                    id: e.id,
+                    date: e.날짜 || e.date,
+                    category: e.분류 || e.category,
+                    description: e.내용 || e.description,
+                    amount: typeof (e.금액 || e.amount) === 'string' 
+                        ? Number((e.금액 || e.amount).replace(/[^0-9.-]+/g,"")) 
+                        : Number(e.금액 || e.amount),
+                    transactionId: e.transaction_id || e.transactionId
+                }));
+                setExpenses(mappedExpenses);
+            }
+            if (transactionsData) {
+                const mapped = transactionsData.map((t: any) => ({
+                    id: t.id,
+                    type: t.type,
+                    category: t.category,
+                    amount: t.amount,
+                    date: t.date,
+                    description: t.description,
+                    studentId: t.student_id,
+                    membershipId: t.membership_id
+                }));
+                setTransactions(mapped);
+            }
+            if (classesData) {
+                const mappedClasses = classesData.map((c: any) => ({
+                    id: c.id,
+                    dayOfWeek: c.day_of_week || c.dayOfWeek,
+                    startTime: c.start_time || c.startTime,
+                    endTime: c.end_time || c.endTime,
+                    className: c.class_name || c.className,
+                    color: c.color
+                }));
+                setSchedule(mappedClasses);
+            }
+        } catch (err) {
+            console.error("fetchData 중 치명적인 오류 발생:", err);
         }
     }, [supabase]);
 
