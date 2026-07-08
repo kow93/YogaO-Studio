@@ -71,6 +71,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         endDate: '',
         holdStartDate: '',
         holdEndDate: '',
+        paymentDate: '',
     });
 
     const openEditModal = useCallback((member: Student & { membership?: Membership }) => {
@@ -87,6 +88,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
             endDate: dayjs(member.membership.endDate).format('YYYY-MM-DD'),
             holdStartDate: member.membership.holdStartDate ? dayjs(member.membership.holdStartDate).format('YYYY-MM-DD') : '',
             holdEndDate: member.membership.holdEndDate ? dayjs(member.membership.holdEndDate).format('YYYY-MM-DD') : '',
+            paymentDate: member.membership.paymentDate ? dayjs(member.membership.paymentDate).format('YYYY-MM-DD') : '',
         });
     }, []);
 
@@ -96,6 +98,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         const membershipUpdates: Partial<Membership> = {
             passType: editForm.passType as PassType,
             startDate: new Date(editForm.startDate).toISOString(),
+            paymentDate: editForm.paymentDate ? new Date(editForm.paymentDate).toISOString() : null as any,
         };
 
         if (editForm.holdStartDate && editForm.holdEndDate) {
@@ -436,6 +439,15 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                             type="date"
                                             value={editForm.endDate}
                                             onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
+                                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">결제일 (수입 집계 기준)</label>
+                                        <input
+                                            type="date"
+                                            value={editForm.paymentDate}
+                                            onChange={(e) => setEditForm({ ...editForm, paymentDate: e.target.value })}
                                             className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                                         />
                                     </div>

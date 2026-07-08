@@ -1,7 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import { Student, AttendanceRecord, Membership, ClassSchedule } from '../types';
 import { SearchIcon, CloseIcon } from './icons';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 const CHOSUNG = [
     'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
@@ -123,7 +128,7 @@ export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({
         // 2. Get attended students for this specific class
         const attended = attendance
             .filter(a => {
-                const aDate = dayjs(a.date).format('YYYY-MM-DD');
+                const aDate = dayjs(a.date).tz('Asia/Seoul').format('YYYY-MM-DD');
                 return aDate === dateString && a.classId === classItem.id;
             })
             .map(a => {
@@ -150,7 +155,7 @@ export const ClassAttendanceModal: React.FC<ClassAttendanceModalProps> = ({
     const attendanceMap = useMemo(() => {
         const map = new Map<string, AttendanceRecord>();
         attendance.forEach(a => {
-            const aDate = dayjs(a.date).format('YYYY-MM-DD');
+            const aDate = dayjs(a.date).tz('Asia/Seoul').format('YYYY-MM-DD');
             if (aDate === dateString && a.classId === classItem.id) {
                 map.set(a.studentId, a);
             }

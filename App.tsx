@@ -554,7 +554,8 @@ const App: React.FC = () => {
                     hold_end_date: newFullMembershipData.holdEndDate || null,
                     payment_method: newFullMembershipData.paymentMethod,
                     cash_receipt_issued: newFullMembershipData.cashReceiptIssued,
-                    refund_amount: newFullMembershipData.refundAmount || null
+                    refund_amount: newFullMembershipData.refundAmount || null,
+                    payment_date: newFullMembershipData.paymentDate || null
                 };
                 const { error } = await supabase.from('membership').update(mappedMembershipData).eq('id', membershipId);
                 if (error) {
@@ -821,7 +822,7 @@ const App: React.FC = () => {
    }, [supabase]);
 
     const toggleAttendance = useCallback(async (studentId: string, date: string, classTime: string, classId?: string) => {
-        const formattedDate = dayjs(date).format('YYYY-MM-DD');
+        const formattedDate = dayjs(date).tz('Asia/Seoul').format('YYYY-MM-DD');
         const targetClassId = classId || '';
         const opKey = `${studentId}_${formattedDate}_${targetClassId}`;
 
@@ -829,7 +830,7 @@ const App: React.FC = () => {
         const student = students.find(s => s.id === studentId);
         
         const existingRecord = attendanceRef.current.find(a => {
-            const aDate = dayjs(a.date).format('YYYY-MM-DD');
+            const aDate = dayjs(a.date).tz('Asia/Seoul').format('YYYY-MM-DD');
             return a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
         });
 
@@ -839,7 +840,7 @@ const App: React.FC = () => {
             if (!willBeChecked) {
                 // 출석 취소 (삭제)
                 return prev.filter(a => {
-                    const aDate = dayjs(a.date).format('YYYY-MM-DD');
+                    const aDate = dayjs(a.date).tz('Asia/Seoul').format('YYYY-MM-DD');
                     const match = a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
                     return !match;
                 });
@@ -847,7 +848,7 @@ const App: React.FC = () => {
                 // 출석 체크 (추가)
                 // 중복 체크 방지
                 const alreadyExists = prev.some(a => {
-                    const aDate = dayjs(a.date).format('YYYY-MM-DD');
+                    const aDate = dayjs(a.date).tz('Asia/Seoul').format('YYYY-MM-DD');
                     return a.studentId === studentId && aDate === formattedDate && (a.classId || '') === targetClassId;
                 });
                 if (alreadyExists) return prev;

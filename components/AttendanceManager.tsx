@@ -52,7 +52,7 @@ const ClassBlock: React.FC<{
     
     const attendanceCount = useMemo(() => {
         return attendance.filter(a => {
-            const aDate = dayjs(a.date).format('YYYY-MM-DD');
+            const aDate = dayjs(a.date).tz('Asia/Seoul').format('YYYY-MM-DD');
             return aDate === dateString && a.classId === classItem.id;
         }).length;
     }, [attendance, dateString, classItem.id]);
@@ -89,7 +89,7 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = (props) => {
     const attendanceByDate = useMemo(() => {
         const map = new Map<string, number>();
         attendance.forEach(a => {
-            const dateStr = dayjs(a.date).format('YYYY-MM-DD');
+            const dateStr = dayjs(a.date).tz('Asia/Seoul').format('YYYY-MM-DD');
             map.set(dateStr, (map.get(dateStr) || 0) + 1);
         });
         return map;
