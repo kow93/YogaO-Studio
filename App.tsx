@@ -611,66 +611,74 @@ const App: React.FC = () => {
         }
     }, [memberships, supabase]);
 
-    const bulkExtendMemberships = useCallback(async (days: number, reason: string) => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-    
-        const studentIdsToUpdate = new Set(
-            memberships
-                .filter(m => {
-                    const endDate = new Date(m.endDate);
-                    endDate.setHours(0, 0, 0, 0);
-                    const isHolding = m.holdStartDate && m.holdEndDate && today >= new Date(m.holdStartDate) && today <= new Date(m.holdEndDate);
-                    return endDate >= today && !isHolding;
-                })
-                .map(m => m.studentId)
-        );
-
-        if (studentIdsToUpdate.size === 0) {
-            alert(`연장할 활성 회원이 없습니다.`);
-            return;
+    const bulkExtendMemberships = useCallback(async (targetMembershipIds: string[], days: number, reason: string) => {
+        if (!targetMembershipIds || targetMembershipIds.length === 0) {
+            alert('연장 대상 회원이 선택되지 않았습니다.');
+            return false;
         }
-        
-        alert(`${studentIdsToUpdate.size}명의 활성 회원 이용권이 ${days}일 연장되었습니다.`);
 
-        const updatedStudents: Student[] = [];
+        const targetIdSet = new Set(targetMembershipIds);
         const updatedMemberships: Membership[] = [];
+        const affectedStudentIds = new Set<string>();
 
-        setStudents(prevStudents =>
-            prevStudents.map(s => {
-                if (studentIdsToUpdate.has(s.id)) {
-                    const extensionRemark = `[${new Date().toLocaleDateString('ko-KR')}] "${reason}" 사유로 ${days}일 연장.`;
-                    const newNotes = s.notes ? `${s.notes}\n${extensionRemark}` : extensionRemark;
-                    const updatedStudent = { ...s, notes: newNotes };
-                    updatedStudents.push(updatedStudent);
-                    return updatedStudent;
-                }
-                return s;
-            })
-        );
-
-        setMemberships(prevMemberships => prevMemberships.map(m => {
-            if (studentIdsToUpdate.has(m.studentId)) {
-                const newEndDate = new Date(m.endDate);
-                newEndDate.setDate(newEndDate.getDate() + days);
-                const updatedMembership = { ...m, endDate: newEndDate.toISOString() };
-                updatedMemberships.push(updatedMembership);
-                return updatedMembership;
+        const newMemberships = memberships.map(m => {
+            if (targetIdSet.has(m.id)) {
+                affectedStudentIds.add(m.studentId);
+                const currentEnd = dayjs(m.endDate);
+                const newEnd = currentEnd.isValid() ? currentEnd.add(days, 'day').toISOString() : m.endDate;
+                const updated = { ...m, endDate: newEnd };
+                updatedMemberships.push(updated);
+                return updated;
             }
             return m;
-        }));
+        });
+
+        // Update students memo with remark
+        const updatedStudents: Student[] = [];
+        const newStudents = students.map(s => {
+            if (affectedStudentIds.has(s.id)) {
+                const extensionRemark = `[${dayjs().format('YYYY-MM-DD')}] ${reason ? `"${reason}" 사유로 ` : ''}${days}일 연장`;
+                const currentMemo = s.memo || s.notes || '';
+                const newMemo = currentMemo ? `${currentMemo}\n${extensionRemark}` : extensionRemark;
+                const updated = { ...s, memo: newMemo, notes: newMemo };
+                updatedStudents.push(updated);
+                return updated;
+            }
+            return s;
+        });
+
+        // Optimistic UI state update
+        setMemberships(newMemberships);
+        setStudents(newStudents);
 
         if (supabase) {
-            for (const s of updatedStudents) {
-                const { error } = await supabase.from('student').update({ memo: s.notes }).eq('student_id', s.id);
-                if (error) console.error(error);
-            }
-            for (const m of updatedMemberships) {
-                const { error } = await supabase.from('membership').update({ end_date: m.endDate }).eq('id', m.id);
-                if (error) console.error(error);
+            try {
+                for (const m of updatedMemberships) {
+                    const { error } = await supabase
+                        .from('membership')
+                        .update({ end_date: m.endDate })
+                        .eq('id', m.id);
+                    if (error) console.error(`Error updating membership ${m.id}:`, error);
+                }
+
+                for (const s of updatedStudents) {
+                    const { error } = await supabase
+                        .from('student')
+                        .update({ memo: s.memo })
+                        .eq('student_id', s.id);
+                    if (error) console.error(`Error updating student memo ${s.id}:`, error);
+                }
+            } catch (err) {
+                console.error("Bulk extend database error:", err);
+                alert("데이터베이스 저장 중 오류가 발생했습니다.");
+                await fetchData();
+                return false;
             }
         }
-    }, [memberships, supabase]);
+
+        await fetchData();
+        return true;
+    }, [memberships, students, supabase, fetchData]);
 
     const importStudentsAndMemberships = useCallback(async (data: any[]) => {
         let addedStudentsCount = 0;
@@ -1177,6 +1185,7 @@ const App: React.FC = () => {
                     updateStudentAndMembership={updateStudentAndMembership}
                     upgradeMembership={upgradeMembership}
                     deleteStudent={deleteStudent}
+                    bulkExtendMemberships={bulkExtendMemberships}
                 />;
             case 'memberships':
                 return <MembershipHistoryManager 

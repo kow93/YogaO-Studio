@@ -3,6 +3,8 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import { Student, Membership, AttendanceRecord, PassType, Transaction } from '../types';
 import { SearchIcon, CloseIcon, DownloadIcon, FinancialsIcon } from './icons';
 import { PASS_PRICES, PASS_OPTIONS } from '../constants';
@@ -10,6 +12,8 @@ import * as XLSX from 'xlsx';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+dayjs.extend(isSameOrAfter);
+dayjs.extend(isSameOrBefore);
 dayjs.tz.setDefault('Asia/Seoul');
 
 interface ActiveMemberManagerProps {
@@ -20,6 +24,7 @@ interface ActiveMemberManagerProps {
     updateStudentAndMembership?: (studentId: string, membershipId: string, studentUpdates: Partial<Student>, membershipUpdates: Partial<Membership>) => void;
     upgradeMembership?: (originalMembershipId: string, newPassType: PassType, paymentMethod: '카드' | '현금', cashReceiptIssued: boolean) => void;
     deleteStudent?: (studentId: string) => void;
+    bulkExtendMemberships?: (targetMembershipIds: string[], days: number, reason: string) => Promise<boolean>;
 }
 
 const MemoInput = ({ value, onSave }: { value: string, onSave: (val: string) => void }) => {
@@ -54,7 +59,8 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
     updateStudent,
     updateStudentAndMembership,
     upgradeMembership,
-    deleteStudent
+    deleteStudent,
+    bulkExtendMemberships
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingMember, setEditingMember] = useState<(Student & { membership?: Membership }) | null>(null);
@@ -62,6 +68,153 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
     const [upgradePassType, setUpgradePassType] = useState<PassType>(PassType.MONTHLY_3_PER_WEEK);
     const [upgradePaymentMethod, setUpgradePaymentMethod] = useState<'카드' | '현금'>('카드');
     const [upgradeCashReceipt, setUpgradeCashReceipt] = useState(false);
+
+    // Vacation Extension State
+    const [showVacationModal, setShowVacationModal] = useState(false);
+    const [vacationStartDate, setVacationStartDate] = useState('2026-08-12');
+    const [vacationEndDate, setVacationEndDate] = useState('2026-08-14');
+    const [vacationDays, setVacationDays] = useState(3);
+    const [vacationReason, setVacationReason] = useState('스튜디오 방학 (08/12 ~ 08/14)');
+    const [selectedMembershipIds, setSelectedMembershipIds] = useState<string[]>([]);
+    const [vacationSearchTerm, setVacationSearchTerm] = useState('');
+    const [isProcessingVacation, setIsProcessingVacation] = useState(false);
+
+    // Calculate vacation days automatically when start/end dates change
+    const handleVacationDateChange = (start: string, end: string) => {
+        setVacationStartDate(start);
+        setVacationEndDate(end);
+        if (start && end) {
+            const dStart = dayjs(start);
+            const dEnd = dayjs(end);
+            if (dStart.isValid() && dEnd.isValid() && (dEnd.isAfter(dStart) || dEnd.isSame(dStart))) {
+                const diff = dEnd.diff(dStart, 'day') + 1;
+                setVacationDays(diff);
+                setVacationReason(`스튜디오 방학 (${dStart.format('MM/DD')} ~ ${dEnd.format('MM/DD')})`);
+            }
+        }
+    };
+
+    const vacationEligibleMembers = useMemo(() => {
+        if (!vacationStartDate || !vacationEndDate) return [];
+        const vStart = dayjs(vacationStartDate).startOf('day');
+        const vEnd = dayjs(vacationEndDate).startOf('day');
+
+        return students.map(student => {
+            if (!student) return null;
+
+            const studentMemberships = memberships.filter(m => {
+                if (m.studentId !== student.id) return false;
+                if (m.refundAmount) return false; // Exclude refunded
+
+                const mStart = dayjs(m.startDate).startOf('day');
+                const mEnd = dayjs(m.endDate).startOf('day');
+
+                // Active around vacation period
+                return mEnd.isSameOrAfter(vStart) && mStart.isSameOrBefore(vEnd);
+            });
+
+            if (studentMemberships.length === 0) return null;
+
+            const latestMembership = studentMemberships.sort((a, b) => 
+                dayjs(b.endDate).valueOf() - dayjs(a.endDate).valueOf()
+            )[0];
+
+            const currentEnd = dayjs(latestMembership.endDate);
+            const projectedEnd = currentEnd.isValid() ? currentEnd.add(vacationDays, 'day') : currentEnd;
+
+            return {
+                student,
+                membership: latestMembership,
+                currentEndDate: currentEnd.isValid() ? currentEnd.format('YYYY-MM-DD') : '-',
+                projectedEndDate: projectedEnd.isValid() ? projectedEnd.format('YYYY-MM-DD') : '-'
+            };
+        }).filter((item): item is { student: Student; membership: Membership; currentEndDate: string; projectedEndDate: string } => item !== null)
+        .sort((a, b) => (a.student.name || '').localeCompare(b.student.name || ''));
+    }, [students, memberships, vacationStartDate, vacationEndDate, vacationDays]);
+
+    const openVacationModal = useCallback(() => {
+        const start = '2026-08-12';
+        const end = '2026-08-14';
+        setVacationStartDate(start);
+        setVacationEndDate(end);
+        const days = dayjs(end).diff(dayjs(start), 'day') + 1;
+        setVacationDays(days);
+        setVacationReason(`스튜디오 여름 방학 (${dayjs(start).format('MM/DD')} ~ ${dayjs(end).format('MM/DD')})`);
+        
+        const vStart = dayjs(start).startOf('day');
+        const vEnd = dayjs(end).startOf('day');
+        const eligibleIds: string[] = [];
+
+        students.forEach(student => {
+            if (!student) return;
+            const validMemberships = memberships.filter(m => {
+                if (m.studentId !== student.id || m.refundAmount) return false;
+                const mStart = dayjs(m.startDate).startOf('day');
+                const mEnd = dayjs(m.endDate).startOf('day');
+                return mEnd.isSameOrAfter(vStart) && mStart.isSameOrBefore(vEnd);
+            });
+            if (validMemberships.length > 0) {
+                const latest = validMemberships.sort((a, b) => dayjs(b.endDate).valueOf() - dayjs(a.endDate).valueOf())[0];
+                eligibleIds.push(latest.id);
+            }
+        });
+
+        setSelectedMembershipIds(eligibleIds);
+        setVacationSearchTerm('');
+        setShowVacationModal(true);
+    }, [students, memberships]);
+
+    const toggleSelectAllVacation = useCallback(() => {
+        if (selectedMembershipIds.length === vacationEligibleMembers.length) {
+            setSelectedMembershipIds([]);
+        } else {
+            setSelectedMembershipIds(vacationEligibleMembers.map(item => item.membership.id));
+        }
+    }, [selectedMembershipIds.length, vacationEligibleMembers]);
+
+    const toggleSelectVacationMember = useCallback((membershipId: string) => {
+        setSelectedMembershipIds(prev => 
+            prev.includes(membershipId) ? prev.filter(id => id !== membershipId) : [...prev, membershipId]
+        );
+    }, []);
+
+    const handleVacationSubmit = useCallback(async () => {
+        if (!bulkExtendMemberships) {
+            alert('일괄 연장 기능을 사용할 수 없습니다.');
+            return;
+        }
+        if (selectedMembershipIds.length === 0) {
+            alert('연장할 대상 회원을 최소 1명 이상 선택해주세요.');
+            return;
+        }
+        if (vacationDays <= 0) {
+            alert('연장 일수는 1일 이상이어야 합니다.');
+            return;
+        }
+
+        const confirmMessage = `[스튜디오 방학/휴관 일괄 연장 확인]\n\n` +
+            `• 방학 기간: ${vacationStartDate} ~ ${vacationEndDate}\n` +
+            `• 연장 일수: +${vacationDays}일\n` +
+            `• 연장 사유: ${vacationReason}\n` +
+            `• 대상 회원: 총 ${selectedMembershipIds.length}명\n\n` +
+            `선택한 회원들의 이용권 만료일을 +${vacationDays}일 연장하시겠습니까?`;
+
+        if (!window.confirm(confirmMessage)) return;
+
+        setIsProcessingVacation(true);
+        try {
+            const success = await bulkExtendMemberships(selectedMembershipIds, vacationDays, vacationReason);
+            if (success) {
+                alert(`총 ${selectedMembershipIds.length}명의 회원 이용권이 ${vacationDays}일 연장되었습니다.`);
+                setShowVacationModal(false);
+            }
+        } catch (error) {
+            console.error('Vacation extension error:', error);
+            alert('연장 처리 중 오류가 발생했습니다.');
+        } finally {
+            setIsProcessingVacation(false);
+        }
+    }, [bulkExtendMemberships, selectedMembershipIds, vacationDays, vacationReason, vacationStartDate, vacationEndDate]);
 
     const [editForm, setEditForm] = useState({
         name: '',
@@ -304,6 +457,14 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
         </tr>
     ));
 
+    const filteredVacationMembers = useMemo(() => {
+        if (!vacationSearchTerm) return vacationEligibleMembers;
+        return vacationEligibleMembers.filter(item => 
+            (item.student.name || '').toLowerCase().includes(vacationSearchTerm.toLowerCase()) ||
+            (item.student.phone || '').includes(vacationSearchTerm)
+        );
+    }, [vacationEligibleMembers, vacationSearchTerm]);
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-end">
@@ -311,10 +472,17 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                     <h2 className="text-3xl font-bold text-gray-900">유효 회원 관리</h2>
                     <p className="text-gray-500 mt-1">현재 유효 회원 총 {activeMembers.length}명</p>
                 </div>
-                <div className="flex gap-4">
+                <div className="flex gap-3">
+                    <button 
+                        onClick={openVacationModal}
+                        className="flex items-center space-x-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl transition-all shadow-sm hover:shadow-md text-sm font-bold active:scale-95"
+                    >
+                        <span>🏖️</span>
+                        <span>방학/휴관 일괄 연장</span>
+                    </button>
                     <button 
                         onClick={exportToExcel}
-                        className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm text-sm font-medium"
+                        className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm text-sm font-medium"
                     >
                         <DownloadIcon className="w-4 h-4" />
                         <span>Excel 내보내기</span>
@@ -326,7 +494,7 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                             placeholder="이름 또는 연락처 검색..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none w-64 shadow-sm"
+                            className="pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none w-60 shadow-sm text-sm"
                         />
                     </div>
                 </div>
@@ -618,6 +786,236 @@ export const ActiveMemberManager: React.FC<ActiveMemberManagerProps> = ({
                                 </div>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Vacation / Holiday Bulk Extension Modal */}
+            {showVacationModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4 overflow-y-auto">
+                    <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl w-full max-w-3xl my-8 flex flex-col max-h-[92vh]">
+                        {/* Modal Header */}
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                                    <span>🏖️</span> 스튜디오 방학 / 휴관 일괄 연장
+                                </h3>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    지정한 방학 기간에 해당하는 유효 회원들의 이용권 만료일을 자동으로 +일수만큼 연장합니다.
+                                </p>
+                            </div>
+                            <button 
+                                onClick={() => !isProcessingVacation && setShowVacationModal(false)}
+                                className="text-gray-400 hover:text-gray-600 p-1"
+                                disabled={isProcessingVacation}
+                            >
+                                <CloseIcon className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body (Scrollable) */}
+                        <div className="space-y-6 overflow-y-auto pr-1 flex-1">
+                            {/* Vacation Period & Days Setup Card */}
+                            <div className="p-5 bg-gradient-to-br from-amber-50/80 to-orange-50/60 rounded-2xl border border-amber-200/80 shadow-sm space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-bold text-amber-900 flex items-center gap-1.5">
+                                        <span>📅</span> 방학 기간 및 연장 설정
+                                    </h4>
+                                    <span className="text-xs font-bold px-2.5 py-1 bg-amber-100/80 text-amber-800 rounded-lg">
+                                        자동 계산: +{vacationDays}일
+                                    </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1.5">
+                                            방학 시작일
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={vacationStartDate}
+                                            onChange={(e) => handleVacationDateChange(e.target.value, vacationEndDate)}
+                                            className="w-full px-3.5 py-2.5 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-sm font-medium shadow-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1.5">
+                                            방학 종료일
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={vacationEndDate}
+                                            onChange={(e) => handleVacationDateChange(vacationStartDate, e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-sm font-medium shadow-sm"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                                    <div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <label className="text-xs font-bold text-amber-800 uppercase tracking-wider">
+                                                연장 일수 (+일)
+                                            </label>
+                                            <div className="flex gap-1">
+                                                {[1, 2, 3, 4, 5, 7].map(d => (
+                                                    <button
+                                                        key={d}
+                                                        type="button"
+                                                        onClick={() => setVacationDays(d)}
+                                                        className={`px-1.5 py-0.5 text-[11px] font-bold rounded ${vacationDays === d ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}
+                                                    >
+                                                        +{d}일
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="365"
+                                                value={vacationDays}
+                                                onChange={(e) => setVacationDays(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                                className="w-full px-3.5 py-2.5 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-sm font-bold text-amber-900 shadow-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-1.5">
+                                            연장 사유 (회원 메모에 기록)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={vacationReason}
+                                            onChange={(e) => setVacationReason(e.target.value)}
+                                            placeholder="예: 스튜디오 여름 방학 (08/12 ~ 08/14)"
+                                            className="w-full px-3.5 py-2.5 bg-white border border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-sm shadow-sm"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Eligible Members Preview List */}
+                            <div className="space-y-3">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div className="flex items-center gap-3">
+                                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={vacationEligibleMembers.length > 0 && selectedMembershipIds.length === vacationEligibleMembers.length}
+                                                onChange={toggleSelectAllVacation}
+                                                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                                            />
+                                            <span className="text-sm font-bold text-gray-800">
+                                                전체 선택 ({selectedMembershipIds.length} / {vacationEligibleMembers.length}명)
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div className="relative">
+                                        <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="대상 회원 검색..."
+                                            value={vacationSearchTerm}
+                                            onChange={(e) => setVacationSearchTerm(e.target.value)}
+                                            className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-amber-500 w-48"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-inner bg-white max-h-64 overflow-y-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead className="sticky top-0 bg-gray-50/95 backdrop-blur-sm border-b border-gray-200 z-10">
+                                            <tr>
+                                                <th className="px-4 py-3 w-10 text-center">선택</th>
+                                                <th className="px-4 py-3 font-bold text-gray-600">회원 정보</th>
+                                                <th className="px-4 py-3 font-bold text-gray-600">이용권</th>
+                                                <th className="px-4 py-3 font-bold text-gray-600">기존 만료일</th>
+                                                <th className="px-4 py-3 font-bold text-emerald-700">연장 후 만료일</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {filteredVacationMembers.map(({ student, membership, currentEndDate, projectedEndDate }) => {
+                                                const isSelected = selectedMembershipIds.includes(membership.id);
+                                                return (
+                                                    <tr 
+                                                        key={membership.id} 
+                                                        onClick={() => toggleSelectVacationMember(membership.id)}
+                                                        className={`cursor-pointer transition-colors ${isSelected ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-gray-50/50 opacity-60'}`}
+                                                    >
+                                                        <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => toggleSelectVacationMember(membership.id)}
+                                                                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-2.5">
+                                                            <div className="font-bold text-gray-900">{student.name}</div>
+                                                            <div className="text-[11px] text-gray-400">{student.phone}</div>
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-gray-600">
+                                                            {membership.passType}
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-gray-500 font-medium">
+                                                            {currentEndDate}
+                                                        </td>
+                                                        <td className="px-4 py-2.5">
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded-md border border-emerald-100">
+                                                                {projectedEndDate}
+                                                                <span className="text-[10px] text-emerald-600 font-extrabold">+{vacationDays}일</span>
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                    {filteredVacationMembers.length === 0 && (
+                                        <div className="p-8 text-center text-gray-400 text-xs">
+                                            {vacationEligibleMembers.length === 0 
+                                                ? '지정한 방학 기간에 해당하는 유효 회원이 없습니다.' 
+                                                : '검색 조건에 일치하는 대상 회원이 없습니다.'}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="flex gap-4 pt-6 mt-4 border-t border-gray-100">
+                            <button
+                                type="button"
+                                onClick={() => setShowVacationModal(false)}
+                                disabled={isProcessingVacation}
+                                className="flex-1 px-6 py-3.5 bg-gray-100 text-gray-700 rounded-2xl font-bold hover:bg-gray-200 transition-all text-sm disabled:opacity-50"
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleVacationSubmit}
+                                disabled={isProcessingVacation || selectedMembershipIds.length === 0}
+                                className="flex-[2] px-6 py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-orange-100 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                {isProcessingVacation ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                        <span>일괄 연장 처리 중...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>🏖️</span>
+                                        <span>총 {selectedMembershipIds.length}명 회원 만료일 +{vacationDays}일 일괄 연장 실행</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
